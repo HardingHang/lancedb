@@ -286,8 +286,10 @@ mod tests {
     // Integration tests for Phase 0
 
     use crate::connect;
+    use crate::query::ExecutableQuery;
     use crate::table::OptimizeAction;
-    use arrow_array::RecordBatch;
+    use arrow_array::{Array, RecordBatch};
+    use futures::TryStreamExt;
 
     #[tokio::test]
     async fn test_create_table_with_cluster_config() {
@@ -477,5 +479,63 @@ mod tests {
         // Verify table is still empty after clustering
         let count_after = table.count_rows(None).await.unwrap();
         assert_eq!(count_after, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cluster_all_null_values() {
+        let conn = connect("memory://").execute().await.unwrap();
+
+        // Create a table with all NULL values in the clustering key
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),  // Nullable
+            Field::new("value", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![None, None, None])),
+                Arc::new(arrow_array::StringArray::from(vec!["a", "b", "c"])),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_null_cluster", batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        // Run cluster operation - should succeed
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        // All rows should be processed (they exist, just have NULL cluster key)
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 3);
+
+        // Query data to verify order is preserved (or at least data is intact)
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+        let result_batch = &batches[0];
+
+        // Verify all rows are present
+        assert_eq!(result_batch.num_rows(), 3);
+
+        // Verify values are intact (order may vary if sorted, but data should be there)
+        let value_col = result_batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow_array::StringArray>()
+            .unwrap();
+        let values: Vec<_> = (0..value_col.len()).map(|i| value_col.value(i)).collect();
+        assert!(values.contains(&"a"));
+        assert!(values.contains(&"b"));
+        assert!(values.contains(&"c"));
     }
 }
