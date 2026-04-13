@@ -1,0 +1,150 @@
+# LanceDB 多维聚簇功能 - 开发进度跟踪
+
+**开发分支**: `feature/multi-dimensional-clustering`
+**当前阶段**: Phase 0 - MVP (1维聚簇核心实现) ✅ 已完成
+**最后更新**: 2026-04-13
+
+---
+
+## 阶段概览
+
+| 阶段 | 状态 | 主要任务 |
+|------|------|---------|
+| Phase 0 | ✅ 已完成 | MVP - 1维聚簇核心实现 |
+| Phase 1 | ⏳ 未开始 | 健壮性 - 错误处理和流式处理 |
+| Phase 2 | ⏳ 未开始 | 索引重建 |
+| Phase 3 | ⏳ 未开始 | Hilbert算法 - 多维聚簇 |
+| Phase 4 | ⏳ 未开始 | Python绑定 |
+| Phase 5 | ⏳ 未开始 | Node.js绑定 |
+| Phase 6 | ⏳ 未开始 | 完善与文档 |
+
+---
+
+## Phase 0 完成总结
+
+### 已实现功能
+
+#### 1. 配置管理模块 (`cluster/mod.rs`)
+- **ClusterConfig 结构体**: 完整的序列化/反序列化支持
+  - 使用 JSON 格式存储在 schema_metadata 中
+  - 键名: `lancedb.cluster.config`
+- **配置验证逻辑**:
+  - 聚簇键数量检查 (1-4个)
+  - 重复列名检查
+  - 空列名检查
+  - 列存在性验证
+  - 数据类型支持验证 (数值和时间类型)
+- **ClusterStats 结构体**: 记录聚簇操作统计信息
+
+#### 2. 算法模块 (`cluster/algorithm.rs`)
+- **DirectSortAlgorithm**: 单维直接排序算法
+- **scalar_value_to_sort_key**: 将标量值转换为可排序字节
+  - 支持所有数值类型 (i8-i64, u8-u64, f32, f64)
+  - 支持时间类型 (Timestamp各精度, Date32, Date64)
+  - 正确处理 NULL 值和 NaN
+- **自动算法选择**: 1维用 direct, 2-4维预留 hilbert
+
+#### 3. 执行模块 (`cluster/execute.rs`)
+- **execute_cluster_direct**: 全局重写执行函数
+- **sort_batch_by_column**: 按指定列排序 RecordBatch
+
+#### 4. API 扩展
+- **`CreateTableBuilder::cluster_by()`**: 建表时指定聚簇键
+- **`Table::cluster_config()`**: 查询当前聚簇配置
+- **`OptimizeAction::Cluster`**: 执行聚簇优化
+  - `full: true`: 全局重写
+  - `full: false`: 返回 NotImplemented (增量聚簇预留)
+
+---
+
+## 测试覆盖详情
+
+### 测试统计
+- **总计**: 17个测试 + 1个文档测试
+- **单元测试**: 12个
+- **集成测试**: 5个
+- **全部通过**: ✅
+
+### 单元测试覆盖 (12个)
+
+| 测试文件 | 测试函数 | 测试内容 |
+|---------|---------|---------|
+| `mod.rs` | `test_cluster_config_validation_success` | 验证有效配置通过校验 |
+| `mod.rs` | `test_cluster_config_validation_empty_keys` | 空聚簇键返回错误 |
+| `mod.rs` | `test_cluster_config_validation_too_many_keys` | 超过4个键返回错误 |
+| `mod.rs` | `test_cluster_config_validation_duplicate_keys` | 重复列名返回错误 |
+| `mod.rs` | `test_cluster_config_validation_column_not_found` | 不存在的列返回错误 |
+| `mod.rs` | `test_cluster_config_validation_unsupported_type` | 不支持的类型(如字符串)返回错误 |
+| `mod.rs` | `test_cluster_config_serialization` | JSON序列化/反序列化正确性 |
+| `mod.rs` | `test_cluster_config_auto_algorithm_selection` | 自动选择算法(1维direct, 2维hilbert) |
+| `algorithm.rs` | `test_direct_sort_algorithm` | DirectSortAlgorithm基本功能 |
+| `algorithm.rs` | `test_scalar_value_to_sort_key_ordering` | 排序键的正确顺序(负数<0<正数) |
+| `algorithm.rs` | `test_get_algorithm` | 1维返回direct, 2维+返回NotSupported |
+| `execute.rs` | `test_sort_batch_by_column` | RecordBatch按列正确排序 |
+
+### 集成测试覆盖 (5个)
+
+| 测试函数 | 测试场景 | 验证点 |
+|---------|---------|-------|
+| `test_create_table_with_cluster_config` | 使用 `cluster_by` 创建表 | 配置正确持久化，可通过 `cluster_config()` 读取 |
+| `test_cluster_config_returns_none_for_non_clustered_table` | 创建无聚簇配置的表 | `cluster_config()` 返回 None |
+| `test_optimize_cluster_not_supported_for_unconfigured_table` | 对无配置表执行 Cluster | 返回错误 "does not have clustering configured" |
+| `test_optimize_cluster_incremental_not_supported` | 对配置表执行增量聚簇 | 返回错误 "Incremental clustering not supported" |
+| `test_create_table_with_multidimensional_cluster_not_supported` | 创建2维聚簇表并执行 | 配置可存储，但执行返回 "Multi-dimensional clustering not yet implemented" |
+
+### 文档测试 (1个)
+
+| 位置 | 测试内容 |
+|-----|---------|
+| `CreateTableBuilder::cluster_by` 文档 | 展示如何使用 `cluster_by` 创建聚簇表 |
+
+---
+
+## 关键设计决策确认
+
+| 决策项 | 选择 | 状态 |
+|--------|------|------|
+| 配置存储方式 | 单键 `lancedb.cluster.config` JSON存储 | ✅ 已实现 |
+| 算法选择 | 1维直接排序，2-4维Hilbert | ⚠️ 1维完成，2-4维Phase 3 |
+| NULL值处理 | 不参与排序，放末尾 | ✅ 已实现 |
+| 索引重建 | Cluster操作自动重建 | 📝 Phase 2 实现 |
+| 统计信息 | OptimizeStats.cluster 字段 | ✅ 已添加 |
+
+---
+
+## Phase 1 计划 (健壮性)
+
+### 目标
+让核心流程健壮、可测试
+
+### 任务清单
+- [ ] 完整的错误处理边界测试
+  - [ ] 空表聚簇场景
+  - [ ] 全 NULL 值聚簇
+  - [ ] 并发聚簇冲突处理
+- [ ] 事务回滚机制（临时文件清理）
+- [ ] 流式处理（大数据集支持，避免OOM）
+  - [ ] 分批读取数据
+  - [ ] 外部排序实现
+  - [ ] 分批写入
+
+---
+
+## 断点恢复说明
+
+如果会话中断，从以下步骤继续：
+
+1. 确认当前分支: `git branch`
+2. 检查修改状态: `git status`
+3. 查看本文件了解当前进度
+4. 运行测试确认状态: `cargo test --quiet --features remote -p lancedb table::cluster`
+5. 继续下一步任务
+
+---
+
+## 提交历史
+
+| 提交 | 说明 |
+|-----|------|
+| `e7a32cab` | Phase 0 MVP - 1维聚簇核心实现（合并提交） |
+| `0026be89` | cluster_config 持久化 + 集成测试 |
