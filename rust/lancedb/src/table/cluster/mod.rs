@@ -436,4 +436,46 @@ mod tests {
         assert!(err_msg.contains("Multi-dimensional clustering"));
         assert!(err_msg.contains("not yet implemented"));
     }
+
+    #[tokio::test]
+    async fn test_cluster_empty_table() {
+        let conn = connect("memory://").execute().await.unwrap();
+
+        // Create an empty table with clustering config
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let empty_batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow_array::Int64Array::from(Vec::<i64>::new()))],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_empty", empty_batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        // Verify table is empty
+        let count = table.count_rows(None).await.unwrap();
+        assert_eq!(count, 0);
+
+        // Run cluster operation - should succeed and return empty stats
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        // Verify empty stats
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 0);
+        assert_eq!(cluster_stats.fragments_written, 0);
+
+        // Verify table is still empty after clustering
+        let count_after = table.count_rows(None).await.unwrap();
+        assert_eq!(count_after, 0);
+    }
 }
