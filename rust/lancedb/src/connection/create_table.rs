@@ -142,6 +142,46 @@ impl CreateTableBuilder {
         self
     }
 
+    /// Set the clustering configuration for the table.
+    ///
+    /// Clustering keys are used to physically sort the data, improving range query performance.
+    /// Only numeric and timestamp columns are supported as clustering keys.
+    ///
+    /// # Example
+    /// ```
+    /// # use lancedb::connection::connect;
+    /// # use arrow_array::{Int64Array, RecordBatch};
+    /// # use arrow_schema::{DataType, Field, Schema};
+    /// # use std::sync::Arc;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let db = connect("memory://").execute().await?;
+    /// # let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+    /// # let data = RecordBatch::try_new(schema, vec![Arc::new(Int64Array::from(vec![1, 2, 3]))])?;
+    /// let table = db
+    ///     .create_table("my_table", data)
+    ///     .cluster_by(&["id"])
+    ///     .execute()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn cluster_by(mut self, columns: &[&str]) -> Self {
+        let keys: Vec<String> = columns.iter().map(|s| s.to_string()).collect();
+        self.request.cluster_config = Some(crate::table::cluster::ClusterConfig::new(keys));
+        self
+    }
+
+    /// Set the clustering algorithm for the table.
+    ///
+    /// This is optional - the algorithm is automatically selected based on the number of
+    /// clustering keys (direct for 1D, hilbert for 2-4D).
+    pub fn cluster_algorithm(mut self, algorithm: impl Into<String>) -> Self {
+        if let Some(ref mut config) = self.request.cluster_config {
+            config.algorithm = algorithm.into();
+        }
+        self
+    }
+
     /// Execute the create table operation
     pub async fn execute(mut self) -> Result<Table> {
         let embedding_registry = self.embedding_registry.clone();

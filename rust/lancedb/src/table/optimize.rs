@@ -7,6 +7,7 @@
 //! maintain good performance for LanceDB tables.
 
 use std::sync::Arc;
+use arrow_schema::{Schema, SchemaRef};
 
 use lance::dataset::cleanup::RemovalStats;
 use lance::dataset::optimize::{CompactionMetrics, IndexRemapperOptions, compact_files};
@@ -17,8 +18,10 @@ use log::info;
 pub use chrono::Duration;
 pub use lance::dataset::optimize::CompactionOptions;
 
+pub use super::cluster::ClusterStats;
+use super::cluster::ClusterConfig;
 use super::NativeTable;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// Optimize the dataset.
 ///
@@ -87,6 +90,24 @@ pub enum OptimizeAction {
     /// For example, when using IVF, an index will create clusters.  Optimizing an index assigns unindexed
     /// data to the existing clusters, but it does not move the clusters or create new clusters.
     Index(OptimizeOptions),
+    /// Cluster the table data by clustering keys.
+    ///
+    /// This operation rewrites all data in the table, sorting it by the clustering keys.
+    /// Clustering improves the performance of range queries on the clustering columns.
+    ///
+    /// The `full` parameter controls the mode:
+    /// - `true`: Global rewrite of all data (default and only supported mode in V1)
+    /// - `false`: Incremental clustering (reserved, will return NotImplemented error)
+    ///
+    /// After clustering, all existing indices are automatically rebuilt.
+    Cluster {
+        /// If true, perform a global rewrite of all data.
+        /// If false, returns NotImplemented error (incremental clustering not yet supported).
+        full: bool,
+        /// Target number of rows per fragment.
+        /// If None, uses the default compaction options.
+        target_rows_per_fragment: Option<usize>,
+    },
 }
 
 /// Statistics about the optimization.
@@ -97,6 +118,9 @@ pub struct OptimizeStats {
 
     /// Stats of the version pruning
     pub prune: Option<RemovalStats>,
+
+    /// Stats of the clustering operation
+    pub cluster: Option<ClusterStats>,
 }
 
 /// Internal implementation of optimize_indices
@@ -167,6 +191,7 @@ pub(crate) async fn execute_optimize(
     let mut stats = OptimizeStats {
         compaction: None,
         prune: None,
+        cluster: None,
     };
     match action {
         OptimizeAction::All => {
@@ -208,8 +233,55 @@ pub(crate) async fn execute_optimize(
         OptimizeAction::Index(options) => {
             optimize_indices(table, &options).await?;
         }
+        OptimizeAction::Cluster { full, target_rows_per_fragment } => {
+            if !full {
+                return Err(Error::NotSupported {
+                    message: "Incremental clustering not supported in this version".to_string(),
+                });
+            }
+            let cluster_stats = execute_cluster(table, target_rows_per_fragment).await?;
+            stats.cluster = Some(cluster_stats);
+        }
     }
     Ok(stats)
+}
+
+/// Execute the clustering operation on the table.
+///
+/// This function performs a global rewrite of the table data, sorting by clustering keys.
+async fn execute_cluster(
+    table: &NativeTable,
+    target_rows_per_fragment: Option<usize>,
+) -> Result<ClusterStats> {
+    // Get cluster configuration from table metadata
+    let dataset = table.dataset.get().await?;
+    let config = ClusterConfig::from_schema_metadata(&dataset.schema().metadata)
+        .ok_or_else(|| Error::InvalidInput {
+            message: "Table does not have clustering configured".to_string(),
+        })?;
+
+    // Validate the configuration
+    let schema: SchemaRef = Arc::new(Schema::from(dataset.schema()));
+    config.validate(&schema)?;
+
+    // For Phase 0, we only support 1D clustering
+    if config.keys.len() != 1 {
+        return Err(Error::NotSupported {
+            message: format!(
+                "Multi-dimensional clustering ({}D) not yet implemented in Phase 0. Only 1D is supported.",
+                config.keys.len()
+            ),
+        });
+    }
+
+    // Check if table is empty
+    let row_count = dataset.count_rows(None).await?;
+    if row_count == 0 {
+        return Ok(ClusterStats::default());
+    }
+
+    // Execute 1D clustering using direct sort
+    crate::table::cluster::execute_cluster_direct(table, &config, target_rows_per_fragment).await
 }
 
 #[cfg(test)]

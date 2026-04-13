@@ -129,6 +129,8 @@ pub struct CreateTableRequest {
     /// Optional namespace client for server-side query execution.
     /// When set, queries will be executed on the namespace server instead of locally.
     pub namespace_client: Option<Arc<dyn LanceNamespace>>,
+    /// Optional clustering configuration for the table.
+    pub cluster_config: Option<crate::table::cluster::ClusterConfig>,
 }
 
 impl CreateTableRequest {
@@ -141,6 +143,7 @@ impl CreateTableRequest {
             write_options: WriteOptions::default(),
             location: None,
             namespace_client: None,
+            cluster_config: None,
         }
     }
 }

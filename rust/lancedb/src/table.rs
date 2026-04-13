@@ -66,6 +66,7 @@ use self::dataset::DatasetConsistencyWrapper;
 use self::merge::MergeInsertBuilder;
 
 mod add_data;
+pub mod cluster;
 pub mod datafusion;
 pub(crate) mod dataset;
 pub mod delete;
@@ -347,6 +348,9 @@ pub trait BaseTable: std::fmt::Display + std::fmt::Debug + Send + Sync {
     ) -> Result<()>;
     /// Get statistics on the table
     async fn stats(&self) -> Result<TableStatistics>;
+
+    /// Get the clustering configuration for this table.
+    async fn cluster_config(&self) -> Result<Option<crate::table::cluster::ClusterConfig>>;
     /// Create an ExecutionPlan for inserting data into the table.
     ///
     /// This is used by the DataFusion TableProvider implementation to support
@@ -989,6 +993,13 @@ impl Table {
     /// modification operations.
     pub async fn optimize(&self, action: OptimizeAction) -> Result<OptimizeStats> {
         self.inner.optimize(action).await
+    }
+
+    /// Get the clustering configuration for this table.
+    ///
+    /// Returns `None` if the table does not have clustering configured.
+    pub async fn cluster_config(&self) -> Result<Option<crate::table::cluster::ClusterConfig>> {
+        self.inner.cluster_config().await
     }
 
     /// Add new columns to the table, providing values to fill in.
@@ -2616,6 +2627,13 @@ impl BaseTable for NativeTable {
             fragment_stats: frag_stats,
         };
         Ok(stats)
+    }
+
+    async fn cluster_config(&self) -> Result<Option<crate::table::cluster::ClusterConfig>> {
+        let dataset = self.dataset.get().await?;
+        Ok(crate::table::cluster::ClusterConfig::from_schema_metadata(
+            &dataset.schema().metadata,
+        ))
     }
 
     async fn create_insert_exec(

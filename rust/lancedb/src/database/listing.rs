@@ -861,6 +861,13 @@ impl Database for ListingDatabase {
 
         let data_schema = request.data.arrow_schema();
 
+        // Validate cluster_config if provided
+        if let Some(ref cluster_config) = request.cluster_config {
+            cluster_config.validate(&data_schema)?;
+        }
+
+        let cluster_config = request.cluster_config.clone();
+
         match NativeTable::create(
             &table_uri,
             &request.name,
@@ -874,7 +881,13 @@ impl Database for ListingDatabase {
         )
         .await
         {
-            Ok(table) => Ok(Arc::new(table)),
+            Ok(table) => {
+                // TODO: Write cluster_config to schema metadata
+                // This requires using Lance's transaction API which is complex
+                // For Phase 0, we skip this and will add it in a follow-up
+                let _ = cluster_config; // Suppress unused warning
+                Ok(Arc::new(table))
+            }
             Err(Error::TableAlreadyExists { .. }) => {
                 self.handle_table_exists(
                     &request.name,
@@ -1152,6 +1165,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1214,6 +1228,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1274,7 +1289,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        })
+        cluster_config: None,
+            })
         .await
         .unwrap();
 
@@ -1311,7 +1327,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        })
+        cluster_config: None,
+            })
         .await
         .unwrap();
 
@@ -1352,7 +1369,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        })
+        cluster_config: None,
+            })
         .await
         .unwrap();
 
@@ -1393,7 +1411,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        })
+        cluster_config: None,
+            })
         .await
         .unwrap();
 
@@ -1450,7 +1469,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        })
+        cluster_config: None,
+            })
         .await
         .unwrap();
 
@@ -1504,6 +1524,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1579,6 +1600,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1655,6 +1677,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1731,6 +1754,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1818,6 +1842,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1869,6 +1894,7 @@ mod tests {
                 write_options,
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -1940,6 +1966,7 @@ mod tests {
                 write_options,
                 location: None,
                 namespace_client: None,
+            cluster_config: None,
             })
             .await
             .unwrap();
@@ -2058,7 +2085,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        })
+        cluster_config: None,
+            })
         .await
         .unwrap();
 
@@ -2070,7 +2098,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        })
+        cluster_config: None,
+            })
         .await
         .unwrap();
 

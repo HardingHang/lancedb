@@ -1981,6 +1981,12 @@ impl<S: HttpSend> BaseTable for RemoteTable<S> {
         Ok(stats)
     }
 
+    async fn cluster_config(&self) -> Result<Option<crate::table::cluster::ClusterConfig>> {
+        // TODO: Implement remote cluster_config endpoint
+        // For now, return None as remote clustering is not yet supported
+        Ok(None)
+    }
+
     async fn create_insert_exec(
         &self,
         input: Arc<dyn ExecutionPlan>,
