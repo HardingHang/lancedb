@@ -24,6 +24,16 @@ const DEFAULT_BATCH_SIZE: usize = 10000;
 /// - Reads data in batches (streaming)
 /// - Sorts accumulated batches
 /// - Writes sorted data in fragments (streaming)
+///
+/// # Transaction Safety
+///
+/// This operation leverages Lance's immutable data structure for atomicity:
+/// - Write operations create new versions without modifying existing data
+/// - If the write fails, the original data remains intact
+/// - The table is only updated to point to the new version after successful write
+/// - Old versions can be cleaned up later using the prune operation
+///
+/// This ensures the table never remains in an intermediate/corrupted state.
 pub async fn execute_cluster_direct(
     table: &NativeTable,
     config: &ClusterConfig,
@@ -87,12 +97,17 @@ pub async fn execute_cluster_direct(
     );
 
     // Write sorted data
+    // Lance's WriteMode::Overwrite is atomic - if this fails, original data is untouched
     lance::Dataset::write(
         reader,
         &uri,
         Some(write_params),
     )
-    .await?;
+    .await
+    .map_err(|e| crate::Error::Other {
+        message: format!("Failed to write clustered data: {}", e),
+        source: Some(Box::new(e)),
+    })?;
 
     // Reload dataset to get the updated view
     table.dataset.reload().await?;

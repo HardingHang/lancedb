@@ -650,4 +650,81 @@ mod tests {
             assert_eq!(all_values[i], i as i64);
         }
     }
+
+    #[tokio::test]
+    async fn test_cluster_transaction_atomicity() {
+        // Test that clustering operations are atomic:
+        // 1. Original data is preserved in version history
+        // 2. After clustering, we can still access original version
+        // 3. New data is properly sorted
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        // Create a table with unsorted data
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow_array::Int64Array::from(vec![5, 3, 1, 4, 2]))],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_atomicity", batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        // Record version before clustering
+        let versions_before = table.list_versions().await.unwrap();
+        let version_before = versions_before.last().unwrap().version;
+
+        // Run cluster operation
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 5);
+
+        // Verify new data is sorted
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+        let id_col = batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        assert_eq!(id_col.values(), &[1, 2, 3, 4, 5]);
+
+        // Verify we can checkout the original version
+        table.checkout(version_before).await.unwrap();
+
+        // Verify original version has unsorted data
+        let original_results = table.query().execute().await.unwrap();
+        let original_batches: Vec<_> = original_results.try_collect().await.unwrap();
+        let original_id_col = original_batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+
+        // Original order was [5, 3, 1, 4, 2]
+        assert_eq!(original_id_col.values(), &[5, 3, 1, 4, 2]);
+
+        // Verify versions after clustering
+        table.checkout_latest().await.unwrap();
+        let versions_after = table.list_versions().await.unwrap();
+
+        // Should have at least 2 versions (original + clustered)
+        assert!(
+            versions_after.len() >= versions_before.len() + 1,
+            "Expected at least one new version after clustering"
+        );
+    }
 }
