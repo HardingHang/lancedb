@@ -118,15 +118,25 @@
 让核心流程健壮、可测试
 
 ### 任务清单
-- [ ] 完整的错误处理边界测试
-  - [ ] 空表聚簇场景
-  - [ ] 全 NULL 值聚簇
-  - [ ] 并发聚簇冲突处理
+- [x] 完整的错误处理边界测试
+  - [x] 空表聚簇场景 - `test_cluster_empty_table`
+  - [x] 全 NULL 值聚簇 - `test_cluster_all_null_values`
+  - [x] 并发聚簇冲突处理 - `test_concurrent_cluster_conflict` (基础测试)
 - [ ] 事务回滚机制（临时文件清理）
 - [ ] 流式处理（大数据集支持，避免OOM）
   - [ ] 分批读取数据
   - [ ] 外部排序实现
   - [ ] 分批写入
+
+### 已完成工作
+
+#### 2026-04-13
+- **修复数据集更新问题**: `WriteMode::Overwrite` + `dataset.reload()` 确保聚簇后数据正确可见
+- **添加边界测试**:
+  - `test_cluster_empty_table`: 验证空表返回空 stats
+  - `test_cluster_all_null_values`: 验证 NULL 值处理（放末尾）
+  - `test_concurrent_cluster_conflict`: 验证聚簇后数据正确排序
+- **测试统计**: 20个测试全部通过
 
 ---
 
