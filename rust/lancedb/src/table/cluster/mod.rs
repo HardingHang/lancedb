@@ -590,4 +590,64 @@ mod tests {
             .unwrap();
         assert_eq!(id_col.values(), &[1, 2, 3]);
     }
+
+    #[tokio::test]
+    async fn test_cluster_streaming_with_target_rows() {
+        // Test that target_rows_per_fragment correctly splits data into multiple fragments
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        // Create a table with 100 rows
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow_array::Int64Array::from_iter(0..100))],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_streaming", batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        // Run cluster operation with target_rows_per_fragment = 25
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: Some(25),
+            })
+            .await
+            .unwrap();
+
+        // Verify stats
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 100);
+        assert_eq!(cluster_stats.fragments_written, 4); // 100 rows / 25 per fragment = 4 fragments
+
+        // Verify data is sorted across all fragments
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+
+        // Collect all values
+        let mut all_values = Vec::new();
+        for batch in batches {
+            let col = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap();
+            for i in 0..col.len() {
+                all_values.push(col.value(i));
+            }
+        }
+
+        // Verify all 100 values are present and sorted
+        assert_eq!(all_values.len(), 100);
+        for i in 0..100 {
+            assert_eq!(all_values[i], i as i64);
+        }
+    }
 }
