@@ -281,4 +281,159 @@ mod tests {
         let config2 = ClusterConfig::new(vec!["id".to_string(), "timestamp".to_string()]);
         assert_eq!(config2.algorithm, "hilbert");
     }
+
+
+    // Integration tests for Phase 0
+
+    use crate::connect;
+    use crate::table::OptimizeAction;
+    use arrow_array::RecordBatch;
+
+    #[tokio::test]
+    async fn test_create_table_with_cluster_config() {
+        let conn = connect("memory://").execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow_array::Int64Array::from(vec![3, 1, 2]))],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_cluster", batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        let config = table.cluster_config().await.unwrap();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.keys, vec!["id"]);
+        assert_eq!(config.algorithm, "direct");
+    }
+
+    #[tokio::test]
+    async fn test_cluster_config_returns_none_for_non_clustered_table() {
+        let conn = connect("memory://").execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3]))],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_no_cluster", batch)
+            .execute()
+            .await
+            .unwrap();
+
+        let config = table.cluster_config().await.unwrap();
+        assert!(config.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_optimize_cluster_not_supported_for_unconfigured_table() {
+        let conn = connect("memory://").execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3]))],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_cluster_error", batch)
+            .execute()
+            .await
+            .unwrap();
+
+        let result = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("does not have clustering configured"));
+    }
+
+    #[tokio::test]
+    async fn test_optimize_cluster_incremental_not_supported() {
+        let conn = connect("memory://").execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3]))],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_incremental", batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        let result = table
+            .optimize(OptimizeAction::Cluster {
+                full: false,
+                target_rows_per_fragment: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Incremental clustering not supported"));
+    }
+
+    #[tokio::test]
+    async fn test_create_table_with_multidimensional_cluster_not_supported() {
+        let conn = connect("memory://").execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Int64, false),
+            Field::new("y", DataType::Int64, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3])),
+                Arc::new(arrow_array::Int64Array::from(vec![4, 5, 6])),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_2d", batch)
+            .cluster_by(&["x", "y"])
+            .execute()
+            .await
+            .unwrap();
+
+        let config = table.cluster_config().await.unwrap();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.keys, vec!["x", "y"]);
+        assert_eq!(config.algorithm, "hilbert");
+
+        let result = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Multi-dimensional clustering"));
+        assert!(err_msg.contains("not yet implemented"));
+    }
 }

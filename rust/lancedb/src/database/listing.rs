@@ -882,10 +882,19 @@ impl Database for ListingDatabase {
         .await
         {
             Ok(table) => {
-                // TODO: Write cluster_config to schema metadata
-                // This requires using Lance's transaction API which is complex
-                // For Phase 0, we skip this and will add it in a follow-up
-                let _ = cluster_config; // Suppress unused warning
+                // Write cluster_config to schema metadata if provided
+                if let Some(config) = cluster_config {
+                    let metadata = vec![(
+                        crate::table::cluster::ClusterConfig::SCHEMA_METADATA_KEY.to_string(),
+                        config.to_json()?,
+                    )];
+                    if let Err(e) = table.replace_schema_metadata(metadata).await {
+                        return Err(Error::Other {
+                            message: format!("Failed to write cluster config: {}", e),
+                            source: Some(Box::new(e)),
+                        });
+                    }
+                }
                 Ok(Arc::new(table))
             }
             Err(Error::TableAlreadyExists { .. }) => {
