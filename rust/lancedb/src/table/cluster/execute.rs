@@ -6,7 +6,7 @@
 use arrow_array::RecordBatch;
 
 use futures::TryStreamExt;
-use lance::dataset::WriteParams;
+use lance::dataset::{WriteMode, WriteParams};
 
 use crate::error::Result;
 use crate::table::cluster::{ClusterConfig, ClusterStats};
@@ -48,6 +48,7 @@ pub async fn execute_cluster_direct(
 
     // Create write parameters
     let mut write_params = WriteParams::default();
+    write_params.mode = WriteMode::Overwrite;
     if let Some(target_rows) = target_rows_per_fragment {
         write_params.max_rows_per_file = target_rows;
         write_params.max_rows_per_group = target_rows;
@@ -67,15 +68,15 @@ pub async fn execute_cluster_direct(
     );
 
     // Create a new dataset with sorted data
-    let _ = lance::Dataset::write(
+    lance::Dataset::write(
         reader,
         &uri,
         Some(write_params),
     )
     .await?;
 
-    // Update dataset reference
-    // Note: In Phase 0, this is simplified. Phase 2 will handle proper index rebuild.
+    // Reload dataset to get the updated view
+    table.dataset.reload().await?;
 
     Ok(ClusterStats {
         rows_processed: row_count,
