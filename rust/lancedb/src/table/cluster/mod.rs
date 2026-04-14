@@ -6,7 +6,6 @@
 //! This module provides functionality to cluster table data by specified keys,
 //! optimizing range query performance through physical data layout.
 
-
 use arrow_schema::SchemaRef;
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
@@ -53,7 +52,9 @@ impl ClusterConfig {
     }
 
     /// Parse cluster config from schema metadata.
-    pub fn from_schema_metadata(metadata: &std::collections::HashMap<String, String>) -> Option<Self> {
+    pub fn from_schema_metadata(
+        metadata: &std::collections::HashMap<String, String>,
+    ) -> Option<Self> {
         metadata
             .get(Self::SCHEMA_METADATA_KEY)
             .and_then(|value| serde_json::from_str(value).ok())
@@ -101,9 +102,11 @@ impl ClusterConfig {
 
         // Check column existence and type
         for key in &self.keys {
-            let field = schema.field_with_name(key).map_err(|_| Error::InvalidInput {
-                message: format!("Clustering key column '{}' not found in schema", key),
-            })?;
+            let field = schema
+                .field_with_name(key)
+                .map_err(|_| Error::InvalidInput {
+                    message: format!("Clustering key column '{}' not found in schema", key),
+                })?;
 
             if !Self::is_supported_type(field.data_type()) {
                 return Err(Error::InvalidInput {
@@ -162,10 +165,7 @@ pub struct ClusterStats {
 }
 
 /// Validate and create a cluster configuration from column names.
-pub fn validate_cluster_keys(
-    keys: &[String],
-    schema: &SchemaRef,
-) -> Result<ClusterConfig> {
+pub fn validate_cluster_keys(keys: &[String], schema: &SchemaRef) -> Result<ClusterConfig> {
     let config = ClusterConfig::new(keys.to_vec());
     config.validate(schema)?;
     Ok(config)
@@ -219,7 +219,12 @@ mod tests {
         ]);
         let result = config.validate(&schema);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("exceeds maximum of 4"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("exceeds maximum of 4")
+        );
     }
 
     #[test]
@@ -228,10 +233,12 @@ mod tests {
         let config = ClusterConfig::new(vec!["id".to_string(), "id".to_string()]);
         let result = config.validate(&schema);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Duplicate clustering key"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate clustering key")
+        );
     }
 
     #[test]
@@ -240,10 +247,12 @@ mod tests {
         let config = ClusterConfig::new(vec!["nonexistent".to_string()]);
         let result = config.validate(&schema);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not found in schema"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not found in schema")
+        );
     }
 
     #[test]
@@ -252,10 +261,12 @@ mod tests {
         let config = ClusterConfig::new(vec!["name".to_string()]); // Utf8 is not supported
         let result = config.validate(&schema);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not supported for clustering"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not supported for clustering")
+        );
     }
 
     #[test]
@@ -282,10 +293,10 @@ mod tests {
         assert_eq!(config2.algorithm, "hilbert");
     }
 
-
     // Integration tests for Phase 0
 
     use crate::connect;
+    use crate::index::{Index, scalar::BTreeIndexBuilder};
     use crate::query::ExecutableQuery;
     use crate::table::OptimizeAction;
     use arrow_array::{Array, RecordBatch};
@@ -487,7 +498,7 @@ mod tests {
 
         // Create a table with all NULL values in the clustering key
         let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int64, true),  // Nullable
+            Field::new("id", DataType::Int64, true), // Nullable
             Field::new("value", DataType::Utf8, false),
         ]));
         let batch = RecordBatch::try_new(
@@ -726,5 +737,147 @@ mod tests {
             versions_after.len() >= versions_before.len() + 1,
             "Expected at least one new version after clustering"
         );
+    }
+
+    #[tokio::test]
+    async fn test_cluster_rebuilds_btree_index() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("value", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![3, 1, 2])),
+                Arc::new(arrow_array::StringArray::from(vec!["c", "a", "b"])),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_cluster_index", batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        // Create a BTree index on the id column
+        table
+            .create_index(&["id"], Index::BTree(BTreeIndexBuilder::default()))
+            .execute()
+            .await
+            .unwrap();
+
+        // Verify index exists before clustering
+        let indices_before = table.list_indices().await.unwrap();
+        assert_eq!(indices_before.len(), 1);
+        assert_eq!(indices_before[0].index_type, crate::index::IndexType::BTree);
+
+        // Run cluster operation
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 3);
+        assert_eq!(cluster_stats.indices_rebuilt, 1);
+
+        // Verify data is sorted
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+        let result_batch = &batches[0];
+
+        let id_col = result_batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        assert_eq!(id_col.values(), &[1, 2, 3]);
+
+        // Verify index still exists after clustering
+        let indices_after = table.list_indices().await.unwrap();
+        assert_eq!(indices_after.len(), 1);
+        assert_eq!(indices_after[0].index_type, crate::index::IndexType::BTree);
+        assert_eq!(indices_after[0].columns, vec!["id"]);
+
+        // Verify index is functional (all rows indexed)
+        let index_stats = table
+            .index_stats(&indices_after[0].name)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(index_stats.num_indexed_rows, 3);
+        assert_eq!(index_stats.num_unindexed_rows, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cluster_rebuilds_multiple_indices() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("category", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![3, 1, 2])),
+                Arc::new(arrow_array::StringArray::from(vec!["c", "a", "b"])),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_multi_index", batch)
+            .cluster_by(&["id"])
+            .execute()
+            .await
+            .unwrap();
+
+        // Create two BTree indices
+        table
+            .create_index(&["id"], Index::BTree(BTreeIndexBuilder::default()))
+            .name("id_idx".to_string())
+            .execute()
+            .await
+            .unwrap();
+        table
+            .create_index(&["category"], Index::BTree(BTreeIndexBuilder::default()))
+            .name("cat_idx".to_string())
+            .execute()
+            .await
+            .unwrap();
+
+        // Run cluster operation
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.indices_rebuilt, 2);
+
+        // Verify both indices exist and are functional
+        let indices = table.list_indices().await.unwrap();
+        assert_eq!(indices.len(), 2);
+
+        for idx in &indices {
+            let stats = table.index_stats(&idx.name).await.unwrap().unwrap();
+            assert_eq!(stats.num_indexed_rows, 3);
+            assert_eq!(stats.num_unindexed_rows, 0);
+        }
     }
 }

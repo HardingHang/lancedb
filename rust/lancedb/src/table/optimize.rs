@@ -6,8 +6,8 @@
 //! This module contains the implementation of optimization operations that help
 //! maintain good performance for LanceDB tables.
 
-use std::sync::Arc;
 use arrow_schema::{Schema, SchemaRef};
+use std::sync::Arc;
 
 use lance::dataset::cleanup::RemovalStats;
 use lance::dataset::optimize::{CompactionMetrics, IndexRemapperOptions, compact_files};
@@ -18,10 +18,14 @@ use log::info;
 pub use chrono::Duration;
 pub use lance::dataset::optimize::CompactionOptions;
 
-pub use super::cluster::ClusterStats;
 use super::cluster::ClusterConfig;
-use super::NativeTable;
+pub use super::cluster::ClusterStats;
+use super::{BaseTable, NativeTable};
 use crate::error::{Error, Result};
+use crate::index::scalar::{
+    BTreeIndexBuilder, BitmapIndexBuilder, FtsIndexBuilder, LabelListIndexBuilder,
+};
+use crate::index::{Index, IndexConfig, IndexType};
 
 /// Optimize the dataset.
 ///
@@ -233,7 +237,10 @@ pub(crate) async fn execute_optimize(
         OptimizeAction::Index(options) => {
             optimize_indices(table, &options).await?;
         }
-        OptimizeAction::Cluster { full, target_rows_per_fragment } => {
+        OptimizeAction::Cluster {
+            full,
+            target_rows_per_fragment,
+        } => {
             if !full {
                 return Err(Error::NotSupported {
                     message: "Incremental clustering not supported in this version".to_string(),
@@ -246,18 +253,80 @@ pub(crate) async fn execute_optimize(
     Ok(stats)
 }
 
+/// Convert an IndexType to the corresponding Index builder.
+///
+/// For scalar indices, we can reconstruct exactly. For vector indices,
+/// Lance currently does not store sufficient parameters in the manifest
+/// to fully recreate the original index, so we use Index::Auto.
+fn index_type_to_index(index_type: IndexType) -> Index {
+    match index_type {
+        IndexType::BTree => Index::BTree(BTreeIndexBuilder::default()),
+        IndexType::Bitmap => Index::Bitmap(BitmapIndexBuilder::default()),
+        IndexType::LabelList => Index::LabelList(LabelListIndexBuilder::default()),
+        IndexType::FTS => Index::FTS(FtsIndexBuilder::default()),
+        // Vector indices: Lance manifest does not preserve original build parameters
+        // (num_partitions, num_sub_vectors, etc.) so we fall back to Auto.
+        _ => Index::Auto,
+    }
+}
+
+/// Rebuild all indices on the table after clustering.
+///
+/// Returns the number of indices successfully rebuilt.
+async fn rebuild_indices(table: &NativeTable, indices: Vec<IndexConfig>) -> Result<usize> {
+    let mut rebuilt = 0;
+    for index in indices {
+        // Drop the old index if it still exists.
+        // After WriteMode::Overwrite, the old index may already be gone from the
+        // new manifest, so we ignore "not found" errors.
+        if let Err(e) = table.drop_index(&index.name).await {
+            let err_msg = e.to_string();
+            if !err_msg.contains("not found") {
+                return Err(Error::Runtime {
+                    message: format!(
+                        "Failed to drop index '{}' during cluster: {}",
+                        index.name, e
+                    ),
+                });
+            }
+        }
+
+        // Create the new index with the same configuration
+        let idx = index_type_to_index(index.index_type);
+        let table_arc: Arc<dyn BaseTable> = Arc::new(table.clone());
+        crate::index::IndexBuilder::new(table_arc, index.columns.clone(), idx)
+            .name(index.name.clone())
+            .train(true)
+            .replace(true)
+            .execute()
+            .await
+            .map_err(|e| Error::Runtime {
+                message: format!(
+                    "Failed to rebuild index '{}' after clustering: {}",
+                    index.name, e
+                ),
+            })?;
+
+        rebuilt += 1;
+    }
+    Ok(rebuilt)
+}
+
 /// Execute the clustering operation on the table.
 ///
 /// This function performs a global rewrite of the table data, sorting by clustering keys.
+/// After rewriting, all existing indices are automatically rebuilt.
 async fn execute_cluster(
     table: &NativeTable,
     target_rows_per_fragment: Option<usize>,
 ) -> Result<ClusterStats> {
     // Get cluster configuration from table metadata
     let dataset = table.dataset.get().await?;
-    let config = ClusterConfig::from_schema_metadata(&dataset.schema().metadata)
-        .ok_or_else(|| Error::InvalidInput {
-            message: "Table does not have clustering configured".to_string(),
+    let config =
+        ClusterConfig::from_schema_metadata(&dataset.schema().metadata).ok_or_else(|| {
+            Error::InvalidInput {
+                message: "Table does not have clustering configured".to_string(),
+            }
         })?;
 
     // Validate the configuration
@@ -280,8 +349,42 @@ async fn execute_cluster(
         return Ok(ClusterStats::default());
     }
 
+    // Capture indices and current version BEFORE rewriting data
+    let indices = table.list_indices().await?;
+    let version_before = dataset.version().version;
+    drop(dataset);
+
     // Execute 1D clustering using direct sort
-    crate::table::cluster::execute_cluster_direct(table, &config, target_rows_per_fragment).await
+    let mut stats =
+        crate::table::cluster::execute_cluster_direct(table, &config, target_rows_per_fragment)
+            .await?;
+
+    // Rebuild indices on the newly clustered data
+    if !indices.is_empty() {
+        match rebuild_indices(table, indices).await {
+            Ok(rebuilt) => {
+                stats.indices_rebuilt = rebuilt;
+            }
+            Err(e) => {
+                // Rollback to the original version if index rebuild fails
+                log::error!(
+                    "Index rebuild failed after clustering. Rolling back to version {}. Error: {}",
+                    version_before,
+                    e
+                );
+                if let Err(rollback_err) = table.dataset.as_time_travel(version_before).await {
+                    log::error!(
+                        "Failed to rollback to version {}: {}. The table may be in an inconsistent state.",
+                        version_before,
+                        rollback_err
+                    );
+                }
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(stats)
 }
 
 #[cfg(test)]
