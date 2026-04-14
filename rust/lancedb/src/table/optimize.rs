@@ -333,15 +333,12 @@ async fn execute_cluster(
     let schema: SchemaRef = Arc::new(Schema::from(dataset.schema()));
     config.validate(&schema)?;
 
-    // For Phase 0, we only support 1D clustering
-    if config.keys.len() != 1 {
-        return Err(Error::NotSupported {
-            message: format!(
-                "Multi-dimensional clustering ({}D) not yet implemented in Phase 0. Only 1D is supported.",
-                config.keys.len()
-            ),
-        });
-    }
+    // Select clustering algorithm based on dimension
+    let algorithm = crate::table::cluster::algorithm::get_algorithm(
+        config.keys.len(),
+        Some(&config.algorithm),
+        config.algorithm_params.as_ref(),
+    )?;
 
     // Check if table is empty
     let row_count = dataset.count_rows(None).await?;
@@ -354,10 +351,14 @@ async fn execute_cluster(
     let version_before = dataset.version().version;
     drop(dataset);
 
-    // Execute 1D clustering using direct sort
-    let mut stats =
-        crate::table::cluster::execute_cluster_direct(table, &config, target_rows_per_fragment)
-            .await?;
+    // Execute clustering using the selected algorithm
+    let mut stats = crate::table::cluster::execute_cluster_direct(
+        table,
+        &config,
+        algorithm.as_ref(),
+        target_rows_per_fragment,
+    )
+    .await?;
 
     // Rebuild indices on the newly clustered data
     if !indices.is_empty() {

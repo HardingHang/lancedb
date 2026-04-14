@@ -33,6 +33,7 @@ datafusion.workspace = true
 object_store = { workspace = true }
 snafu = { workspace = true }
 half = { workspace = true }
+hilbert_index = "0.1"
 lazy_static.workspace = true
 lance = { workspace = true }
 lance-core = { workspace = true }

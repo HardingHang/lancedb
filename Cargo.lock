@@ -3544,6 +3544,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hilbert_index"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d58d54151b7b56c50940d90abb7458654a323cd622b1c73564776658813414e"
+
+[[package]]
 name = "hmac"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4668,6 +4674,7 @@ dependencies = [
  "futures",
  "half",
  "hf-hub",
+ "hilbert_index",
  "http 1.4.0",
  "http-body 1.0.1",
  "lance",

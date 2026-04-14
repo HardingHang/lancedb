@@ -6,6 +6,7 @@
 //! This module provides functionality to cluster table data by specified keys,
 //! optimizing range query performance through physical data layout.
 
+use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use datafusion::scalar::ScalarValue;
 use serde::{Deserialize, Serialize};
@@ -147,6 +148,14 @@ impl ClusterConfig {
 pub trait ClusteringAlgorithm: Send + Sync {
     /// Get the algorithm name.
     fn name(&self) -> &str;
+
+    /// Prepare the algorithm by scanning all batches.
+    ///
+    /// This is called once before `compute_sort_key` to allow algorithms
+    /// to compute statistics (e.g., min/max bounds for normalization).
+    fn prepare(&self, _batches: &[RecordBatch], _keys: &[String]) -> Result<()> {
+        Ok(())
+    }
 
     /// Compute sort key for a row given its clustering column values.
     /// Returns bytes that can be compared for ordering.
@@ -408,7 +417,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_table_with_multidimensional_cluster_not_supported() {
+    async fn test_create_table_with_multidimensional_cluster() {
         let conn = connect("memory://").execute().await.unwrap();
 
         let schema = Arc::new(Schema::new(vec![
@@ -437,17 +446,357 @@ mod tests {
         assert_eq!(config.keys, vec!["x", "y"]);
         assert_eq!(config.algorithm, "hilbert");
 
-        let result = table
+        let stats = table
             .optimize(OptimizeAction::Cluster {
                 full: true,
                 target_rows_per_fragment: None,
             })
-            .await;
+            .await
+            .unwrap();
 
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Multi-dimensional clustering"));
-        assert!(err_msg.contains("not yet implemented"));
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 3);
+
+        // Verify data integrity
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+        let result_batch = &batches[0];
+        assert_eq!(result_batch.num_rows(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_cluster_2d_hilbert_basic() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Int64, false),
+            Field::new("y", DataType::Int64, false),
+            Field::new("value", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![0, 0, 1, 1])),
+                Arc::new(arrow_array::Int64Array::from(vec![0, 1, 1, 0])),
+                Arc::new(arrow_array::StringArray::from(vec!["a", "b", "c", "d"])),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_2d_hilbert", batch)
+            .cluster_by(&["x", "y"])
+            .execute()
+            .await
+            .unwrap();
+
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 4);
+
+        // Verify data is ordered by Hilbert curve
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+        let result_batch = &batches[0];
+
+        let x_col = result_batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        let y_col = result_batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+
+        let algo = crate::table::cluster::algorithm::HilbertCurveAlgorithm::new(2);
+        let mut values = Vec::new();
+        for row in 0..result_batch.num_rows() {
+            values.push((
+                ScalarValue::Int64(Some(x_col.value(row))),
+                ScalarValue::Int64(Some(y_col.value(row))),
+            ));
+        }
+        algo.prepare(&[result_batch.clone()], &["x".to_string(), "y".to_string()])
+            .unwrap();
+
+        let mut prev_key: Option<Vec<u8>> = None;
+        for (x, y) in values {
+            let key = algo.compute_sort_key(&[x, y]).unwrap();
+            if let Some(ref prev) = prev_key {
+                assert!(
+                    key >= *prev,
+                    "Hilbert sort keys should be monotonically increasing"
+                );
+            }
+            prev_key = Some(key);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cluster_3d_hilbert_basic() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Int64, false),
+            Field::new("y", DataType::Int64, false),
+            Field::new("z", DataType::Int64, false),
+            Field::new("value", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![0, 0, 0, 0, 1, 1, 1, 1])),
+                Arc::new(arrow_array::Int64Array::from(vec![0, 0, 1, 1, 0, 0, 1, 1])),
+                Arc::new(arrow_array::Int64Array::from(vec![0, 1, 0, 1, 0, 1, 0, 1])),
+                Arc::new(arrow_array::StringArray::from(vec![
+                    "a", "b", "c", "d", "e", "f", "g", "h",
+                ])),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_3d_hilbert", batch)
+            .cluster_by(&["x", "y", "z"])
+            .execute()
+            .await
+            .unwrap();
+
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 8);
+
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+        let result_batch = &batches[0];
+
+        let x_col = result_batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        let y_col = result_batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        let z_col = result_batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+
+        let algo = crate::table::cluster::algorithm::HilbertCurveAlgorithm::new(3);
+        let mut values = Vec::new();
+        for row in 0..result_batch.num_rows() {
+            values.push((
+                ScalarValue::Int64(Some(x_col.value(row))),
+                ScalarValue::Int64(Some(y_col.value(row))),
+                ScalarValue::Int64(Some(z_col.value(row))),
+            ));
+        }
+        algo.prepare(
+            &[result_batch.clone()],
+            &["x".to_string(), "y".to_string(), "z".to_string()],
+        )
+        .unwrap();
+
+        let mut prev_key: Option<Vec<u8>> = None;
+        for (x, y, z) in values {
+            let key = algo.compute_sort_key(&[x, y, z]).unwrap();
+            if let Some(ref prev) = prev_key {
+                assert!(
+                    key >= *prev,
+                    "Hilbert sort keys should be monotonically increasing"
+                );
+            }
+            prev_key = Some(key);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cluster_4d_hilbert_basic() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Int64, false),
+            Field::new("y", DataType::Int64, false),
+            Field::new("z", DataType::Int64, false),
+            Field::new("w", DataType::Int64, false),
+            Field::new("value", DataType::Utf8, false),
+        ]));
+        let mut xs = Vec::new();
+        let mut ys = Vec::new();
+        let mut zs = Vec::new();
+        let mut ws = Vec::new();
+        let mut vals = Vec::new();
+        for i in 0..16 {
+            xs.push(((i >> 3) & 1) as i64);
+            ys.push(((i >> 2) & 1) as i64);
+            zs.push(((i >> 1) & 1) as i64);
+            ws.push((i & 1) as i64);
+            vals.push(format!("v{}", i));
+        }
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(xs)),
+                Arc::new(arrow_array::Int64Array::from(ys)),
+                Arc::new(arrow_array::Int64Array::from(zs)),
+                Arc::new(arrow_array::Int64Array::from(ws)),
+                Arc::new(arrow_array::StringArray::from(vals)),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_4d_hilbert", batch)
+            .cluster_by(&["x", "y", "z", "w"])
+            .execute()
+            .await
+            .unwrap();
+
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 16);
+
+        let results = table.query().execute().await.unwrap();
+        let batches: Vec<_> = results.try_collect().await.unwrap();
+        let result_batch = &batches[0];
+
+        let x_col = result_batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        let y_col = result_batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        let z_col = result_batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+        let w_col = result_batch
+            .column(3)
+            .as_any()
+            .downcast_ref::<arrow_array::Int64Array>()
+            .unwrap();
+
+        let algo = crate::table::cluster::algorithm::HilbertCurveAlgorithm::new(4);
+        let mut coords = Vec::new();
+        for row in 0..result_batch.num_rows() {
+            coords.push((
+                ScalarValue::Int64(Some(x_col.value(row))),
+                ScalarValue::Int64(Some(y_col.value(row))),
+                ScalarValue::Int64(Some(z_col.value(row))),
+                ScalarValue::Int64(Some(w_col.value(row))),
+            ));
+        }
+        algo.prepare(
+            &[result_batch.clone()],
+            &[
+                "x".to_string(),
+                "y".to_string(),
+                "z".to_string(),
+                "w".to_string(),
+            ],
+        )
+        .unwrap();
+
+        let mut prev_key: Option<Vec<u8>> = None;
+        for (x, y, z, w) in coords {
+            let key = algo.compute_sort_key(&[x, y, z, w]).unwrap();
+            if let Some(ref prev) = prev_key {
+                assert!(
+                    key >= *prev,
+                    "Hilbert sort keys should be monotonically increasing"
+                );
+            }
+            prev_key = Some(key);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cluster_2d_hilbert_with_index() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let uri = tmp_dir.path().to_str().unwrap();
+        let conn = crate::connect(uri).execute().await.unwrap();
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("x", DataType::Int64, false),
+            Field::new("y", DataType::Int64, false),
+            Field::new("value", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![0, 1, 1, 0])),
+                Arc::new(arrow_array::Int64Array::from(vec![0, 0, 1, 1])),
+                Arc::new(arrow_array::StringArray::from(vec!["a", "b", "c", "d"])),
+            ],
+        )
+        .unwrap();
+
+        let table = conn
+            .create_table("test_2d_hilbert_index", batch)
+            .cluster_by(&["x", "y"])
+            .execute()
+            .await
+            .unwrap();
+
+        table
+            .create_index(&["value"], Index::BTree(BTreeIndexBuilder::default()))
+            .execute()
+            .await
+            .unwrap();
+
+        let stats = table
+            .optimize(OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: None,
+            })
+            .await
+            .unwrap();
+
+        let cluster_stats = stats.cluster.unwrap();
+        assert_eq!(cluster_stats.rows_processed, 4);
+        assert_eq!(cluster_stats.indices_rebuilt, 1);
+
+        let indices = table.list_indices().await.unwrap();
+        assert_eq!(indices.len(), 1);
+        assert_eq!(indices[0].columns, vec!["value"]);
     }
 
     #[tokio::test]
