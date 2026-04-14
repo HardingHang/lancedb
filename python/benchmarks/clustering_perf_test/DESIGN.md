@@ -14,7 +14,7 @@
 
 ## 2. 核心测试原理
 
-LanceDB 多维聚簇通过 Hilbert 曲线 / Direct Sort 对数据进行全局重排，使物理存储顺序与聚簇键的局部性一致。由于 Lance 的存储格式在每个 Fragment 和 Page 级别维护了 **min-max 统计信息**，查询优化器可以在执行过滤时 **跳过不包含目标范围的 Fragment**，从而减少 `fragments_scanned` 和 `bytes_read`。
+LanceDB 多维聚簇通过 Hilbert 曲线 / Direct Sort 对数据进行全局重排，使物理存储顺序与聚簇键的局部性一致。由于 Lance 的存储格式在每个 Fragment 和 Page 级别维护了 **min-max 统计信息**，查询优化器可以在执行过滤时 **跳过不包含目标范围的 Fragment**，从而减少 `bytes_read` 和 `iops`。
 
 > **关键前提**：聚簇本身不会修改查询计划中的向量 ANN 路径，因此纯向量查询的收益预期为零；收益主要来自于 **伴随标量过滤的查询**。
 
@@ -95,11 +95,11 @@ schema = {
 
 ### 6.1 物理层指标（通过 `scan_stats_callback` 采集）
 
+当前 Lance 版本 `ScanStatistics` 实际暴露的字段为 `bytes_read` 和 `iops`（`fragments_scanned` / `rows_scanned` 暂不可用）。
+
 | 指标 | 含义 | 聚簇收益判断依据 |
 |:---|:---|:---|
 | `bytes_read` | 实际读取的字节数 | **最直接指标**，聚簇有效时应显著下降 |
-| `fragments_scanned` | 扫描的 Fragment 数量 | 反映数据跳过效率 |
-| `rows_scanned` | 扫描的行数 | 与过滤条件的匹配度相关 |
 | `iops` | IO 操作次数 | 间接反映随机/顺序读差异 |
 
 ### 6.2 端到端指标
@@ -121,12 +121,14 @@ schema = {
 由于 `lancedb.Table.search()` 高层 API 可能不支持直接绑定 `scan_stats_callback`，需要通过 `table.to_lance()` 获取底层 `lance.Dataset`：
 
 ```python
-scanner = table.to_lance().scanner(filter="lat >= 30 AND lat <= 35")
 stats = {}
-scanner.scan_stats_callback = lambda s: stats.update({
-    "bytes_read": s.bytes_read,
-    "fragments_scanned": s.fragments_scanned,
-})
+scanner = table.to_lance().scanner(
+    filter="lat >= 30 AND lat <= 35",
+    scan_stats_callback=lambda s: stats.update({
+        "bytes_read": s.bytes_read,
+        "iops": s.iops,
+    }),
+)
 scanner.to_table()
 ```
 
@@ -140,7 +142,16 @@ sync && echo 3 | sudo tee /proc/sys/vm/drop_caches
 
 或每组使用独立的表目录进行进程隔离。
 
-### 7.3 测试独立性
+### 7.3 向量索引构建时间的实际情况
+
+经实测，IVF_PQ 向量索引构建耗时较长，且与数据是否经过聚簇重排**无显著相关性**（聚簇后构建时间约为未聚簇的 1.08×）。在 100K 行 / 128 维数据上：
+
+- 32 partitions / 8 sub-vectors：约 **4.5 分钟**
+- 256 partitions / 16 sub-vectors：预计 **6–10 分钟**
+
+因此，向量索引参数已改为按规模动态配置（scale-aware），且 **scalar benchmark 不再包含 E 组**，避免不必要的等待。
+
+### 7.4 测试独立性
 
 每组对照测试使用独立的表目录：
 - `./benchmark_data/phase2/group_a/`
