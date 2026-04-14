@@ -1,0 +1,418 @@
+{
+  "S1_2D_Range": {
+    "0.1%": {
+      "A": {
+        "latency_p50_ms": 6.985170533880591,
+        "latency_p95_ms": 8.41304570203647,
+        "latency_p99_ms": 8.800049319397658,
+        "bytes_read_avg": 28004096.0,
+        "iops_avg": 6.0
+      },
+      "B": {
+        "latency_p50_ms": 7.113293395377696,
+        "latency_p95_ms": 8.434265584219247,
+        "latency_p99_ms": 8.692355586681515,
+        "bytes_read_avg": 20322089.6,
+        "iops_avg": 89.9
+      },
+      "C": {
+        "latency_p50_ms": 12.511781649664044,
+        "latency_p95_ms": 13.2200340856798,
+        "latency_p99_ms": 13.292386105749756,
+        "bytes_read_avg": 5196928.0,
+        "iops_avg": 2262.0
+      },
+      "D": {
+        "latency_p50_ms": 3.715025493875146,
+        "latency_p95_ms": 3.9511151844635606,
+        "latency_p99_ms": 4.067034204490483,
+        "bytes_read_avg": 351984.0,
+        "iops_avg": 84.0
+      }
+    },
+    "1.0%": {
+      "A": {
+        "latency_p50_ms": 10.631612385623157,
+        "latency_p95_ms": 14.316076540853848,
+        "latency_p99_ms": 35.01740808365863,
+        "bytes_read_avg": 28004096.0,
+        "iops_avg": 6.0
+      },
+      "B": {
+        "latency_p50_ms": 7.908921921625733,
+        "latency_p95_ms": 8.931015350390226,
+        "latency_p99_ms": 9.509167766664175,
+        "bytes_read_avg": 20141475.2,
+        "iops_avg": 89.15
+      },
+      "C": {
+        "latency_p50_ms": 14.226776082068682,
+        "latency_p95_ms": 16.15478281164542,
+        "latency_p99_ms": 16.54949336545542,
+        "bytes_read_avg": 27381124.0,
+        "iops_avg": 136.0
+      },
+      "D": {
+        "latency_p50_ms": 5.006104474887252,
+        "latency_p95_ms": 6.008376006502658,
+        "latency_p99_ms": 6.130052844528109,
+        "bytes_read_avg": 557416.0,
+        "iops_avg": 68.0
+      }
+    },
+    "10.0%": {
+      "A": {
+        "latency_p50_ms": 48.01744350697845,
+        "latency_p95_ms": 51.15687957732007,
+        "latency_p99_ms": 51.57294071977958,
+        "bytes_read_avg": 38643332.2,
+        "iops_avg": 4624.9
+      },
+      "B": {
+        "latency_p50_ms": 8.560710470192134,
+        "latency_p95_ms": 9.390561771579087,
+        "latency_p99_ms": 9.907145225442946,
+        "bytes_read_avg": 24721000.4,
+        "iops_avg": 107.15
+      },
+      "C": {
+        "latency_p50_ms": 70.36249001976103,
+        "latency_p95_ms": 78.08882540557534,
+        "latency_p99_ms": 79.13671784568578,
+        "bytes_read_avg": 28003816.0,
+        "iops_avg": 6.0
+      },
+      "D": {
+        "latency_p50_ms": 8.676857105456293,
+        "latency_p95_ms": 8.981603081338108,
+        "latency_p99_ms": 9.033271088264883,
+        "bytes_read_avg": 7013296.55,
+        "iops_avg": 92.4
+      }
+    },
+    "50.0%": {
+      "A": {
+        "latency_p50_ms": 103.23529492598027,
+        "latency_p95_ms": 107.56520113209262,
+        "latency_p99_ms": 108.99549150140956,
+        "bytes_read_avg": 430914298.0,
+        "iops_avg": 18777.45
+      },
+      "B": {
+        "latency_p50_ms": 29.493852518498898,
+        "latency_p95_ms": 37.39095425698906,
+        "latency_p99_ms": 38.75482295174152,
+        "bytes_read_avg": 158931423.0,
+        "iops_avg": 398.0
+      },
+      "C": {
+        "latency_p50_ms": 200.04821999464184,
+        "latency_p95_ms": 214.76356361526996,
+        "latency_p99_ms": 221.20200386736542,
+        "bytes_read_avg": 424821514.75,
+        "iops_avg": 18481.05
+      },
+      "D": {
+        "latency_p50_ms": 41.82183195371181,
+        "latency_p95_ms": 43.68114473763853,
+        "latency_p99_ms": 45.015517068095505,
+        "bytes_read_avg": 144900355.0,
+        "iops_avg": 344.0
+      }
+    }
+  },
+  "S2_1D_Range": {
+    "0.1%": {
+      "A": {
+        "latency_p50_ms": 16.646123374812305,
+        "latency_p95_ms": 18.05410220986232,
+        "latency_p99_ms": 18.737206913065165,
+        "bytes_read_avg": 28004096.0,
+        "iops_avg": 6.0
+      },
+      "B": {
+        "latency_p50_ms": 18.377963453531265,
+        "latency_p95_ms": 19.634996505919844,
+        "latency_p99_ms": 19.701455340255052,
+        "bytes_read_avg": 28081920.0,
+        "iops_avg": 120.0
+      },
+      "C": {
+        "latency_p50_ms": 16.456800512969494,
+        "latency_p95_ms": 19.750106672290723,
+        "latency_p99_ms": 31.98044627206398,
+        "bytes_read_avg": 28004096.0,
+        "iops_avg": 6.0
+      },
+      "D": {
+        "latency_p50_ms": 20.062151947058737,
+        "latency_p95_ms": 21.407584543339908,
+        "latency_p99_ms": 21.416239230893552,
+        "bytes_read_avg": 28081920.0,
+        "iops_avg": 120.0
+      }
+    },
+    "1.0%": {
+      "A": {
+        "latency_p50_ms": 46.080322936177254,
+        "latency_p95_ms": 47.870334109757096,
+        "latency_p99_ms": 47.95986597659066,
+        "bytes_read_avg": 29168691.1,
+        "iops_avg": 313.75
+      },
+      "B": {
+        "latency_p50_ms": 47.123949974775314,
+        "latency_p95_ms": 47.98428042558953,
+        "latency_p99_ms": 48.4077289304696,
+        "bytes_read_avg": 28081920.0,
+        "iops_avg": 120.0
+      },
+      "C": {
+        "latency_p50_ms": 43.6191865010187,
+        "latency_p95_ms": 45.800293632782996,
+        "latency_p99_ms": 46.21524900663644,
+        "bytes_read_avg": 29087197.7,
+        "iops_avg": 314.25
+      },
+      "D": {
+        "latency_p50_ms": 47.33175807632506,
+        "latency_p95_ms": 48.46792569151148,
+        "latency_p99_ms": 49.669434677343816,
+        "bytes_read_avg": 28081920.0,
+        "iops_avg": 120.0
+      }
+    },
+    "10.0%": {
+      "A": {
+        "latency_p50_ms": 165.96885852050036,
+        "latency_p95_ms": 173.31205618102103,
+        "latency_p99_ms": 183.21674639824775,
+        "bytes_read_avg": 160872005.4,
+        "iops_avg": 31498.55
+      },
+      "B": {
+        "latency_p50_ms": 167.100687045604,
+        "latency_p95_ms": 170.55803762050346,
+        "latency_p99_ms": 171.07874032342806,
+        "bytes_read_avg": 164398273.65,
+        "iops_avg": 32325.95
+      },
+      "C": {
+        "latency_p50_ms": 166.67951154522598,
+        "latency_p95_ms": 178.20565754082054,
+        "latency_p99_ms": 179.4121330184862,
+        "bytes_read_avg": 160826411.8,
+        "iops_avg": 31486.75
+      },
+      "D": {
+        "latency_p50_ms": 174.7794400434941,
+        "latency_p95_ms": 186.37546288082376,
+        "latency_p99_ms": 188.47710219444707,
+        "bytes_read_avg": 164917287.4,
+        "iops_avg": 32436.25
+      }
+    },
+    "50.0%": {
+      "A": {
+        "latency_p50_ms": 89.41190887708217,
+        "latency_p95_ms": 94.2106336937286,
+        "latency_p99_ms": 95.44524991186336,
+        "bytes_read_avg": 546299902.75,
+        "iops_avg": 1487.5
+      },
+      "B": {
+        "latency_p50_ms": 102.2676294669509,
+        "latency_p95_ms": 105.7360599632375,
+        "latency_p99_ms": 110.68858166923745,
+        "bytes_read_avg": 546428239.65,
+        "iops_avg": 1982.75
+      },
+      "C": {
+        "latency_p50_ms": 79.89635097328573,
+        "latency_p95_ms": 86.73961856402457,
+        "latency_p99_ms": 86.80780143477023,
+        "bytes_read_avg": 545724784.3,
+        "iops_avg": 1489.7
+      },
+      "D": {
+        "latency_p50_ms": 100.5220174556598,
+        "latency_p95_ms": 104.4911535223946,
+        "latency_p99_ms": 105.38294590543956,
+        "bytes_read_avg": 546416498.9,
+        "iops_avg": 1982.3
+      }
+    }
+  },
+  "S3_Point_Query": {
+    "point": {
+      "A": {
+        "latency_p50_ms": 6.432584021240473,
+        "latency_p95_ms": 7.305311190430077,
+        "latency_p99_ms": 9.661069542635229,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      },
+      "B": {
+        "latency_p50_ms": 6.595360580831766,
+        "latency_p95_ms": 7.325481181032956,
+        "latency_p99_ms": 7.446717941202223,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      },
+      "C": {
+        "latency_p50_ms": 2.8497540624812245,
+        "latency_p95_ms": 3.1900405418127775,
+        "latency_p99_ms": 3.263007467612624,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      },
+      "D": {
+        "latency_p50_ms": 2.9848110862076283,
+        "latency_p95_ms": 3.672013373579831,
+        "latency_p99_ms": 4.46376899955794,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    }
+  },
+  "S4_Full_Scan": {
+    "all": {
+      "A": {
+        "latency_p50_ms": 84.30315356235951,
+        "latency_p95_ms": 100.33246747916564,
+        "latency_p99_ms": 107.54561976296826,
+        "bytes_read_avg": 559893022.0,
+        "iops_avg": 43.0
+      },
+      "B": {
+        "latency_p50_ms": 65.30641601420939,
+        "latency_p95_ms": 66.3997458992526,
+        "latency_p99_ms": 66.45011720713228,
+        "bytes_read_avg": 559971530.0,
+        "iops_avg": 540.0
+      }
+    }
+  },
+  "S5_Mixed_Condition": {
+    "0.1%": {
+      "A": {
+        "latency_p50_ms": 12.012351537123322,
+        "latency_p95_ms": 12.689796078484505,
+        "latency_p99_ms": 12.740397599991411,
+        "bytes_read_avg": 29004132.0,
+        "iops_avg": 9.0
+      },
+      "B": {
+        "latency_p50_ms": 10.020944522693753,
+        "latency_p95_ms": 10.403495375066996,
+        "latency_p99_ms": 10.408681463450193,
+        "bytes_read_avg": 29082639.0,
+        "iops_avg": 179.75
+      },
+      "C": {
+        "latency_p50_ms": 15.670138993300498,
+        "latency_p95_ms": 16.087241482455283,
+        "latency_p99_ms": 16.27024114364758,
+        "bytes_read_avg": 6111026.0,
+        "iops_avg": 2282.0
+      },
+      "D": {
+        "latency_p50_ms": 4.760019131936133,
+        "latency_p95_ms": 5.210520816035569,
+        "latency_p99_ms": 5.390060902573168,
+        "bytes_read_avg": 384737.0,
+        "iops_avg": 99.0
+      }
+    },
+    "1.0%": {
+      "A": {
+        "latency_p50_ms": 26.501431013457477,
+        "latency_p95_ms": 27.298974769655615,
+        "latency_p99_ms": 27.66419816063717,
+        "bytes_read_avg": 29004132.0,
+        "iops_avg": 9.0
+      },
+      "B": {
+        "latency_p50_ms": 11.629208573140204,
+        "latency_p95_ms": 13.49945121910424,
+        "latency_p99_ms": 23.023576545529053,
+        "bytes_read_avg": 29082640.0,
+        "iops_avg": 180.0
+      },
+      "C": {
+        "latency_p50_ms": 30.205609975382686,
+        "latency_p95_ms": 32.42088163970038,
+        "latency_p99_ms": 32.656005134340376,
+        "bytes_read_avg": 28381031.0,
+        "iops_avg": 139.0
+      },
+      "D": {
+        "latency_p50_ms": 7.540347520262003,
+        "latency_p95_ms": 8.082623826339841,
+        "latency_p99_ms": 8.228619256988168,
+        "bytes_read_avg": 592117.0,
+        "iops_avg": 83.0
+      }
+    },
+    "10.0%": {
+      "A": {
+        "latency_p50_ms": 95.90768697671592,
+        "latency_p95_ms": 102.42664704564959,
+        "latency_p99_ms": 106.23534057755023,
+        "bytes_read_avg": 52356558.8,
+        "iops_avg": 13001.85
+      },
+      "B": {
+        "latency_p50_ms": 20.304285921156406,
+        "latency_p95_ms": 21.000590291805565,
+        "latency_p99_ms": 21.23626994434744,
+        "bytes_read_avg": 69411196.8,
+        "iops_avg": 2210.0
+      },
+      "C": {
+        "latency_p50_ms": 117.03559558372945,
+        "latency_p95_ms": 120.64127456396818,
+        "latency_p99_ms": 120.6536427512765,
+        "bytes_read_avg": 36032198.8,
+        "iops_avg": 4160.05
+      },
+      "D": {
+        "latency_p50_ms": 21.16751845460385,
+        "latency_p95_ms": 21.87327550491318,
+        "latency_p99_ms": 21.87363276956603,
+        "bytes_read_avg": 7325932.2,
+        "iops_avg": 290.45
+      }
+    },
+    "50.0%": {
+      "A": {
+        "latency_p50_ms": 186.90254807006568,
+        "latency_p95_ms": 195.25268217548728,
+        "latency_p99_ms": 197.211948428303,
+        "bytes_read_avg": 212721736.1,
+        "iops_avg": 32242.05
+      },
+      "B": {
+        "latency_p50_ms": 62.73492961190641,
+        "latency_p95_ms": 67.34184315428138,
+        "latency_p99_ms": 71.45368857309222,
+        "bytes_read_avg": 228688757.2,
+        "iops_avg": 9461.05
+      },
+      "C": {
+        "latency_p50_ms": 278.29476550687104,
+        "latency_p95_ms": 291.2527258740738,
+        "latency_p99_ms": 308.17124920431525,
+        "bytes_read_avg": 235719789.35,
+        "iops_avg": 35961.2
+      },
+      "D": {
+        "latency_p50_ms": 78.62945250235498,
+        "latency_p95_ms": 81.14341695327312,
+        "latency_p99_ms": 82.02921068761498,
+        "bytes_read_avg": 186577398.6,
+        "iops_avg": 8138.4
+      }
+    }
+  }
+}
