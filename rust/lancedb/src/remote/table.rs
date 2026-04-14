@@ -1982,8 +1982,9 @@ impl<S: HttpSend> BaseTable for RemoteTable<S> {
     }
 
     async fn cluster_config(&self) -> Result<Option<crate::table::cluster::ClusterConfig>> {
-        // TODO: Implement remote cluster_config endpoint
-        // For now, return None as remote clustering is not yet supported
+        // Remote clustering is not yet supported.
+        // This would require a new endpoint on the remote server to return
+        // the clustering configuration stored in the table schema metadata.
         Ok(None)
     }
 

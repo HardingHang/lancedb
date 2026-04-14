@@ -1174,7 +1174,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1237,7 +1237,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1298,8 +1298,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        cluster_config: None,
-            })
+            cluster_config: None,
+        })
         .await
         .unwrap();
 
@@ -1336,8 +1336,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        cluster_config: None,
-            })
+            cluster_config: None,
+        })
         .await
         .unwrap();
 
@@ -1378,8 +1378,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        cluster_config: None,
-            })
+            cluster_config: None,
+        })
         .await
         .unwrap();
 
@@ -1420,8 +1420,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        cluster_config: None,
-            })
+            cluster_config: None,
+        })
         .await
         .unwrap();
 
@@ -1478,8 +1478,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        cluster_config: None,
-            })
+            cluster_config: None,
+        })
         .await
         .unwrap();
 
@@ -1533,7 +1533,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1609,7 +1609,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1686,7 +1686,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1763,7 +1763,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1851,7 +1851,7 @@ mod tests {
                 write_options: Default::default(),
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1903,7 +1903,7 @@ mod tests {
                 write_options,
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -1975,7 +1975,7 @@ mod tests {
                 write_options,
                 location: None,
                 namespace_client: None,
-            cluster_config: None,
+                cluster_config: None,
             })
             .await
             .unwrap();
@@ -2094,8 +2094,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        cluster_config: None,
-            })
+            cluster_config: None,
+        })
         .await
         .unwrap();
 
@@ -2107,8 +2107,8 @@ mod tests {
             write_options: Default::default(),
             location: None,
             namespace_client: None,
-        cluster_config: None,
-            })
+            cluster_config: None,
+        })
         .await
         .unwrap();
 

@@ -59,7 +59,9 @@ pub async fn execute_cluster_direct(
 
     // Collect batches for sorting
     // For Phase 1: We collect all batches but process writes in chunks
-    // TODO: In future phases, implement true external sort for very large datasets
+    // Note: For extremely large datasets that do not fit in memory, a true
+    // external sort would be required. This is a known limitation of the
+    // current implementation.
     let batches: Vec<RecordBatch> = stream.try_collect().await?;
 
     if batches.is_empty() {

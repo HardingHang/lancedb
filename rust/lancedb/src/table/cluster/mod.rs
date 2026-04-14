@@ -17,13 +17,32 @@ pub mod algorithm;
 pub mod execute;
 
 /// Configuration for table clustering.
+///
+/// Clustering controls the physical layout of data on disk by sorting rows
+/// according to one or more clustering keys. This improves the performance of
+/// range queries and data skipping on those columns.
+///
+/// # Supported keys
+///
+/// - 1 column: uses the `direct` sort algorithm.
+/// - 2-4 columns: uses the `hilbert` curve algorithm for multi-dimensional
+///   spatial locality.
+///
+/// # Supported data types
+///
+/// Numeric types (`Int8` through `Float64`) and temporal types
+/// (`Timestamp`, `Date32`, `Date64`) are supported. Nullable columns are
+/// allowed; `NULL` values are placed at the end during clustering.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClusterConfig {
-    /// Clustering key column names (1-4 columns supported)
+    /// Clustering key column names (1-4 columns supported).
     pub keys: Vec<String>,
-    /// Algorithm name ("direct" for 1D, "hilbert" for 2-4D)
+    /// Algorithm name ("direct" for 1D, "hilbert" for 2-4D).
     pub algorithm: String,
-    /// Optional algorithm parameters
+    /// Optional algorithm parameters.
+    ///
+    /// For the `hilbert` algorithm, this may contain a `bits` key
+    /// (e.g. `{"bits": 16}`) controlling the quantization resolution.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub algorithm_params: Option<serde_json::Value>,
 }
@@ -163,13 +182,16 @@ pub trait ClusteringAlgorithm: Send + Sync {
 }
 
 /// Statistics returned from a clustering operation.
+///
+/// These stats are produced by [`OptimizeAction::Cluster`](crate::table::OptimizeAction::Cluster)
+/// and indicate how much data was rewritten and how many indices were rebuilt.
 #[derive(Debug, Default)]
 pub struct ClusterStats {
-    /// Number of rows processed.
+    /// Number of rows processed and rewritten in sorted order.
     pub rows_processed: usize,
-    /// Number of fragments written.
+    /// Number of fragments written after clustering.
     pub fragments_written: usize,
-    /// Number of indices rebuilt.
+    /// Number of indices automatically rebuilt after the data rewrite.
     pub indices_rebuilt: usize,
 }
 
