@@ -2301,6 +2301,89 @@ describe("when creating an empty table", () => {
 // by utilizing native JS TypedArray support
 //
 // https://github.com/lancedb/lancedb/issues/3115
+describe("clustering", () => {
+  let tmpDir: tmp.DirResult;
+
+  beforeEach(() => {
+    tmpDir = tmp.dirSync({ unsafeCleanup: true });
+  });
+  afterEach(() => {
+    tmpDir.removeCallback();
+  });
+
+  it("should return undefined clusterConfig for non-clustered table", async () => {
+    const db = await connect(tmpDir.name);
+    const table = await db.createTable("test", [{ id: 1 }]);
+    const config = await table.clusterConfig();
+    expect(config).toBeUndefined();
+  });
+
+  it("should return clusterConfig for a clustered table", async () => {
+    const db = await connect(tmpDir.name);
+    const table = await db.createTable("test", [{ id: 1 }], {
+      clusterBy: ["id"],
+    });
+    const config = await table.clusterConfig();
+    expect(config).toBeDefined();
+    expect(config!.keys).toEqual(["id"]);
+    expect(config!.algorithm).toBe("direct");
+  });
+
+  it("should cluster a 1D table and sort data", async () => {
+    const db = await connect(tmpDir.name);
+    const table = await db.createTable(
+      "test",
+      [{ id: 3 }, { id: 1 }, { id: 2 }],
+      { clusterBy: ["id"] },
+    );
+    const stats = await table.cluster();
+    expect(stats.rowsProcessed).toBe(3);
+    expect(stats.fragmentsWritten).toBe(1);
+
+    const data = await table.query().toArray();
+    expect(data.map((r) => r.id)).toEqual([1, 2, 3]);
+  });
+
+  it("should cluster a 2D table with hilbert algorithm", async () => {
+    const db = await connect(tmpDir.name);
+    const table = await db.createTable(
+      "test",
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+        { x: 1, y: 0 },
+      ],
+      { clusterBy: ["x", "y"] },
+    );
+    const config = await table.clusterConfig();
+    expect(config).toBeDefined();
+    expect(config!.keys).toEqual(["x", "y"]);
+    expect(config!.algorithm).toBe("hilbert");
+
+    const stats = await table.cluster();
+    expect(stats.rowsProcessed).toBe(4);
+    expect(stats.fragmentsWritten).toBe(1);
+  });
+
+  it("should support targetRowsPerFragment in cluster", async () => {
+    const db = await connect(tmpDir.name);
+    const table = await db.createTable(
+      "test",
+      Array.from({ length: 100 }, (_, i) => ({ id: 99 - i })),
+      { clusterBy: ["id"] },
+    );
+    const stats = await table.cluster({ targetRowsPerFragment: 25 });
+    expect(stats.rowsProcessed).toBe(100);
+    expect(stats.fragmentsWritten).toBe(4);
+
+    const data = await table.query().toArray();
+    expect(data.map((r) => r.id)).toEqual(
+      Array.from({ length: 100 }, (_, i) => i),
+    );
+  });
+});
+
 describe("when creating a table with Float32Array vectors", () => {
   let tmpDir: tmp.DirResult;
   beforeEach(() => {

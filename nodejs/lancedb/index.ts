@@ -31,6 +31,7 @@ export {
   OptimizeStats,
   CompactionStats,
   RemovalStats,
+  ClusterStats,
   TableStatistics,
   FragmentStatistics,
   FragmentSummaryStats,
@@ -104,6 +105,7 @@ export {
   OptimizeOptions,
   Version,
   ColumnAlteration,
+  ClusterConfig,
 } from "./table";
 
 export {

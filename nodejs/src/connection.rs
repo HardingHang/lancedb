@@ -148,6 +148,7 @@ impl Connection {
         mode: String,
         namespace: Vec<String>,
         storage_options: Option<HashMap<String, String>>,
+        cluster_by: Option<Vec<String>>,
     ) -> napi::Result<Table> {
         let batches = ipc_file_to_batches(buf.to_vec())
             .map_err(|e| napi::Error::from_reason(format!("Failed to read IPC file: {}", e)))?;
@@ -161,6 +162,10 @@ impl Connection {
                 builder = builder.storage_option(key, value);
             }
         }
+        if let Some(cluster_by) = cluster_by {
+            let cols: Vec<&str> = cluster_by.iter().map(String::as_str).collect();
+            builder = builder.cluster_by(&cols);
+        }
         let tbl = builder.execute().await.default_error()?;
         Ok(Table::new(tbl))
     }
@@ -173,6 +178,7 @@ impl Connection {
         mode: String,
         namespace: Vec<String>,
         storage_options: Option<HashMap<String, String>>,
+        cluster_by: Option<Vec<String>>,
     ) -> napi::Result<Table> {
         let schema = ipc_file_to_schema(schema_buf.to_vec()).map_err(|e| {
             napi::Error::from_reason(format!("Failed to marshal schema from JS to Rust: {}", e))
@@ -189,6 +195,10 @@ impl Connection {
             for (key, value) in storage_options {
                 builder = builder.storage_option(key, value);
             }
+        }
+        if let Some(cluster_by) = cluster_by {
+            let cols: Vec<&str> = cluster_by.iter().map(String::as_str).collect();
+            builder = builder.cluster_by(&cols);
         }
         let tbl = builder.execute().await.default_error()?;
         Ok(Table::new(tbl))

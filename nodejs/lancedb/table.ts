@@ -25,6 +25,7 @@ import {
   AddColumnsSql,
   AddResult,
   AlterColumnsResult,
+  ClusterStats,
   DeleteResult,
   DropColumnsResult,
   IndexConfig,
@@ -104,6 +105,18 @@ export interface Version {
   version: number;
   timestamp: Date;
   metadata: Record<string, string>;
+}
+
+/**
+ * Clustering configuration for a table.
+ */
+export interface ClusterConfig {
+  /** The clustering key column names */
+  keys: string[];
+  /** The clustering algorithm name */
+  algorithm: string;
+  /** Optional algorithm-specific parameters */
+  algorithmParams?: unknown;
 }
 
 /**
@@ -522,6 +535,25 @@ export abstract class Table {
    *  modification operations.
    */
   abstract optimize(options?: Partial<OptimizeOptions>): Promise<OptimizeStats>;
+  /**
+   * Get the clustering configuration for this table.
+   *
+   * Returns `undefined` if the table does not have clustering configured.
+   */
+  abstract clusterConfig(): Promise<ClusterConfig | undefined>;
+  /**
+   * Cluster the table data by clustering keys.
+   *
+   * This operation rewrites all data in the table, sorting it by the clustering keys.
+   * Clustering improves the performance of range queries on the clustering columns.
+   *
+   * @param options Optional clustering options
+   * @param options.targetRowsPerFragment Target number of rows per fragment
+   * @returns Statistics about the clustering operation
+   */
+  abstract cluster(options?: {
+    targetRowsPerFragment?: number;
+  }): Promise<ClusterStats>;
   /** List all indices that have been created with {@link Table.createIndex} */
   abstract listIndices(): Promise<IndexConfig[]>;
   /** Return the table as an arrow table */
@@ -918,6 +950,27 @@ export class LocalTable extends Table {
       cleanupOlderThanMs,
       options?.deleteUnverified,
     );
+  }
+
+  async clusterConfig(): Promise<ClusterConfig | undefined> {
+    const config = await this.inner.clusterConfig();
+    if (config === null || config === undefined) {
+      return undefined;
+    }
+    return {
+      keys: config.keys,
+      algorithm: config.algorithm,
+      algorithmParams:
+        config.algorithmParams !== undefined && config.algorithmParams !== null
+          ? JSON.parse(config.algorithmParams)
+          : undefined,
+    };
+  }
+
+  async cluster(options?: {
+    targetRowsPerFragment?: number;
+  }): Promise<ClusterStats> {
+    return await this.inner.cluster(options?.targetRowsPerFragment);
   }
 
   async listIndices(): Promise<IndexConfig[]> {

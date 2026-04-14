@@ -69,6 +69,13 @@ export interface CreateTableOptions {
 
   schema?: SchemaLike;
   embeddingFunction?: EmbeddingFunctionConfig;
+  /**
+   * Clustering key column names for the new table.
+   *
+   * Clustering improves the performance of range queries on the clustering columns
+   * by physically sorting the data.
+   */
+  clusterBy?: string[];
 }
 
 export interface OpenTableOptions {
@@ -457,6 +464,7 @@ export class LocalConnection extends Connection {
       mode,
       namespace ?? [],
       storageOptions,
+      options?.clusterBy,
     );
 
     return new LocalTable(innerTable);
@@ -504,6 +512,7 @@ export class LocalConnection extends Connection {
       mode,
       namespace ?? [],
       storageOptions,
+      createOptions?.clusterBy,
     );
     return new LocalTable(innerTable);
   }

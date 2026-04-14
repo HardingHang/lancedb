@@ -401,6 +401,38 @@ impl Table {
     }
 
     #[napi(catch_unwind)]
+    pub async fn cluster_config(&self) -> napi::Result<Option<ClusterConfigResponse>> {
+        let config = self.inner_ref()?.cluster_config().await.default_error()?;
+        Ok(config.map(|c| ClusterConfigResponse {
+            keys: c.keys,
+            algorithm: c.algorithm,
+            algorithm_params: c.algorithm_params.map(|p| p.to_string()),
+        }))
+    }
+
+    #[napi(catch_unwind)]
+    pub async fn cluster(
+        &self,
+        target_rows_per_fragment: Option<i64>,
+    ) -> napi::Result<ClusterStats> {
+        let target_rows = target_rows_per_fragment.map(|v| v as usize);
+        let stats = self
+            .inner_ref()?
+            .optimize(lancedb::table::OptimizeAction::Cluster {
+                full: true,
+                target_rows_per_fragment: target_rows,
+            })
+            .await
+            .default_error()?;
+        let cluster_stats = stats.cluster.unwrap_or_default();
+        Ok(ClusterStats {
+            rows_processed: cluster_stats.rows_processed as i64,
+            fragments_written: cluster_stats.fragments_written as i64,
+            indices_rebuilt: cluster_stats.indices_rebuilt as i64,
+        })
+    }
+
+    #[napi(catch_unwind)]
     pub async fn optimize(
         &self,
         older_than_ms: Option<i64>,
@@ -562,6 +594,30 @@ pub struct OptimizeStats {
     pub compaction: CompactionStats,
     /// Statistics about the removal operation
     pub prune: RemovalStats,
+}
+
+/// Statistics about a clustering operation.
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct ClusterStats {
+    /// The number of rows processed
+    pub rows_processed: i64,
+    /// The number of fragments written
+    pub fragments_written: i64,
+    /// The number of indices rebuilt
+    pub indices_rebuilt: i64,
+}
+
+/// Response from cluster_config.
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct ClusterConfigResponse {
+    /// The clustering key column names
+    pub keys: Vec<String>,
+    /// The clustering algorithm name
+    pub algorithm: String,
+    /// Optional algorithm parameters as a JSON string
+    pub algorithm_params: Option<String>,
 }
 
 ///  A definition of a column alteration. The alteration changes the column at

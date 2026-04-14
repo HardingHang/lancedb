@@ -15,7 +15,7 @@
 | Phase 2 | ✅ 已完成 | 索引重建 |
 | Phase 3 | ✅ 已完成 | Hilbert算法 - 多维聚簇 |
 | Phase 4 | ✅ 已完成 | Python绑定 |
-| Phase 5 | ⏳ 未开始 | Node.js绑定 |
+| Phase 5 | ✅ 已完成 | Node.js绑定 |
 | Phase 6 | ⏳ 未开始 | 完善与文档 |
 
 ---
@@ -294,6 +294,40 @@
 - **Python 测试**: `python/tests/test_table.py` 82个测试全部通过（含新增 7 个 cluster 测试）
 - **Rust 测试**: 34个 clustering 测试全部通过
 - **Lint/Format**: `make check` 和 `make format` 通过
+
+---
+
+## Phase 5 完成总结 ✅
+
+### 已实现功能
+
+#### 1. napi-rs 绑定扩展 (`nodejs/src/table.rs` + `nodejs/src/connection.rs`)
+- **`ClusterStats` napi 对象**: `rowsProcessed`, `fragmentsWritten`, `indicesRebuilt`
+- **`ClusterConfigResponse` napi 对象**: `keys`, `algorithm`, `algorithmParams` (JSON 字符串)
+- **`Table.clusterConfig()`**: 返回 `Option<ClusterConfigResponse>`
+- **`Table.cluster(targetRowsPerFragment?)`**: 调用 `OptimizeAction::Cluster { full: true, ... }`，返回 `ClusterStats`
+- **`Connection.create_table` / `create_empty_table`**: 新增 `cluster_by: Option<Vec<String>>` 参数
+
+#### 2. TypeScript 高层 API (`nodejs/lancedb/table.ts` + `nodejs/lancedb/connection.ts` + `nodejs/lancedb/index.ts`)
+- `Table` 抽象类: 增加 `clusterConfig()` 和 `cluster()` 抽象方法
+- `LocalTable`: 实现异步方法，`clusterConfig()` 自动解析 `algorithmParams` JSON 字符串为对象
+- `CreateTableOptions`: 增加 `clusterBy?: string[]`
+- `LocalConnection`: `_createTableImpl` 和 `createEmptyTable` 传递 `clusterBy` 到 Rust 层
+- 导出 `ClusterConfig` 和 `ClusterStats` 类型
+
+#### 3. 新增测试 (5个)
+| 测试函数 | 场景 | 验证点 |
+|---------|------|--------|
+| `should return undefined clusterConfig for non-clustered table` | 无聚簇配置表 | `clusterConfig()` 返回 `undefined` |
+| `should return clusterConfig for a clustered table` | 使用 `clusterBy: ["id"]` 创建表 | 配置包含正确 `keys` 和 `algorithm` |
+| `should cluster a 1D table and sort data` | 1D 聚簇并执行 cluster | `rowsProcessed=3`，数据物理排序为 `[1,2,3]` |
+| `should cluster a 2D table with hilbert algorithm` | 2D Hilbert 聚簇并执行 cluster | `algorithm="hilbert"`，操作成功完成 |
+| `should support targetRowsPerFragment in cluster` | 指定 `targetRowsPerFragment=25` | 100 行数据分成 4 个 fragments，全局有序 |
+
+### 测试统计
+- **Node.js 测试**: `nodejs/__test__/table.test.ts` 217 个测试全部通过（含新增 5 个 cluster 测试）
+- **Connection 测试**: `nodejs/__test__/connection.test.ts` 15 个测试全部通过
+- **Lint/Format**: `npm run lint` 和 `npm run lint-fix` 通过
 
 ---
 
