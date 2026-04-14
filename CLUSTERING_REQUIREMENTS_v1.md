@@ -101,7 +101,7 @@ let config = table.cluster_config().await?;
 | 维度数 | 算法 | 说明 |
 |--------|------|------|
 | 1维 | 直接排序 | 按该列值升序排序 |
-| 2-4维 | Hilbert曲线 | 使用 hilbert_curve crate |
+| 2-4维 | Hilbert曲线 | 使用 hilbert_index crate |
 
 ### 4.2 可插拔接口
 

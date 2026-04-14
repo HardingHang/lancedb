@@ -518,7 +518,7 @@ table.optimize(Cluster { full: true, .. }).await?;
 **目标**：支持多维聚簇
 
 **范围**：
-- 集成 `hilbert_curve` crate
+- 集成 `hilbert_index` crate
 - 实现多维归一化（简单线性映射）
 - 算法注册表
 - 自动根据维度选择算法（1维→direct，2-4维→hilbert）
