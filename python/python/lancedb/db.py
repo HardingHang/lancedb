@@ -236,6 +236,7 @@ class DBConnection(EnforceOverrides):
         storage_options_provider: Optional["StorageOptionsProvider"] = None,
         data_storage_version: Optional[str] = None,
         enable_v2_manifest_paths: Optional[bool] = None,
+        cluster_by: Optional[List[str]] = None,
     ) -> Table:
         """Create a [Table][lancedb.table.Table] in the database.
 
@@ -844,6 +845,7 @@ class LanceDBConnection(DBConnection):
         storage_options_provider: Optional["StorageOptionsProvider"] = None,
         data_storage_version: Optional[str] = None,
         enable_v2_manifest_paths: Optional[bool] = None,
+        cluster_by: Optional[List[str]] = None,
     ) -> LanceTable:
         """Create a table in the database.
 
@@ -875,6 +877,7 @@ class LanceDBConnection(DBConnection):
             namespace=namespace,
             storage_options=storage_options,
             storage_options_provider=storage_options_provider,
+            cluster_by=cluster_by,
         )
         return tbl
 
@@ -1319,6 +1322,7 @@ class AsyncConnection(object):
         namespace: Optional[List[str]] = None,
         embedding_functions: Optional[List[EmbeddingFunctionConfig]] = None,
         location: Optional[str] = None,
+        cluster_by: Optional[List[str]] = None,
     ) -> AsyncTable:
         """Create an [AsyncTable][lancedb.table.AsyncTable] in the database.
 
@@ -1517,6 +1521,7 @@ class AsyncConnection(object):
                 storage_options=storage_options,
                 storage_options_provider=storage_options_provider,
                 location=location,
+                cluster_by=cluster_by,
             )
         else:
             data = data_to_reader(data, schema)
@@ -1528,6 +1533,7 @@ class AsyncConnection(object):
                 storage_options=storage_options,
                 storage_options_provider=storage_options_provider,
                 location=location,
+                cluster_by=cluster_by,
             )
 
         return AsyncTable(new_table)

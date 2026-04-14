@@ -1564,6 +1564,45 @@ class Table(ABC):
         """
 
     @abstractmethod
+    def cluster_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the clustering configuration for this table.
+
+        Returns
+        -------
+        dict or None
+            A dictionary with keys "keys", "algorithm", and "algorithm_params",
+            or None if the table does not have clustering configured.
+        """
+
+    @abstractmethod
+    def cluster(
+        self, *, target_rows_per_fragment: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Cluster the table data by clustering keys.
+
+        This operation rewrites all data in the table, sorting it by the clustering
+        keys. Clustering improves the performance of range queries on the clustering
+        columns.
+
+        After clustering, all existing indices are automatically rebuilt.
+
+        Parameters
+        ----------
+        target_rows_per_fragment: int, optional
+            Target number of rows per fragment.
+
+        Returns
+        -------
+        dict
+            Statistics about the clustering operation, including:
+            - rows_processed: number of rows processed
+            - fragments_written: number of fragments written
+            - indices_rebuilt: number of indices rebuilt
+        """
+
+    @abstractmethod
     def list_indices(self) -> Iterable[IndexConfig]:
         """
         List all indices that have been created with
@@ -2810,6 +2849,7 @@ class LanceTable(Table):
         enable_v2_manifest_paths: Optional[bool] = None,
         location: Optional[str] = None,
         namespace_client: Optional[Any] = None,
+        cluster_by: Optional[List[str]] = None,
     ):
         """
         Create a new table.
@@ -2907,6 +2947,7 @@ class LanceTable(Table):
                 storage_options=storage_options,
                 storage_options_provider=storage_options_provider,
                 location=location,
+                cluster_by=cluster_by,
             )
         )
         return self
@@ -3117,6 +3158,47 @@ class LanceTable(Table):
                 delete_unverified=delete_unverified,
                 retrain=retrain,
             )
+        )
+
+    def cluster_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the clustering configuration for this table.
+
+        Returns
+        -------
+        dict or None
+            A dictionary with keys "keys", "algorithm", and "algorithm_params",
+            or None if the table does not have clustering configured.
+        """
+        return LOOP.run(self._table.cluster_config())
+
+    def cluster(
+        self, *, target_rows_per_fragment: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Cluster the table data by clustering keys.
+
+        This operation rewrites all data in the table, sorting it by the clustering
+        keys. Clustering improves the performance of range queries on the clustering
+        columns.
+
+        After clustering, all existing indices are automatically rebuilt.
+
+        Parameters
+        ----------
+        target_rows_per_fragment: int, optional
+            Target number of rows per fragment.
+
+        Returns
+        -------
+        dict
+            Statistics about the clustering operation, including:
+            - rows_processed: number of rows processed
+            - fragments_written: number of fragments written
+            - indices_rebuilt: number of indices rebuilt
+        """
+        return LOOP.run(
+            self._table.cluster(target_rows_per_fragment=target_rows_per_fragment)
         )
 
     def list_indices(self) -> Iterable[IndexConfig]:
@@ -4720,6 +4802,52 @@ class AsyncTable:
             cleanup_since_ms=cleanup_since_ms,
             delete_unverified=delete_unverified,
         )
+
+    async def cluster_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the clustering configuration for this table.
+
+        Returns
+        -------
+        dict or None
+            A dictionary with keys "keys", "algorithm", and "algorithm_params",
+            or None if the table does not have clustering configured.
+        """
+        return await self._inner.cluster_config()
+
+    async def cluster(
+        self, *, target_rows_per_fragment: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Cluster the table data by clustering keys.
+
+        This operation rewrites all data in the table, sorting it by the clustering
+        keys. Clustering improves the performance of range queries on the clustering
+        columns.
+
+        After clustering, all existing indices are automatically rebuilt.
+
+        Parameters
+        ----------
+        target_rows_per_fragment: int, optional
+            Target number of rows per fragment.
+
+        Returns
+        -------
+        dict
+            Statistics about the clustering operation, including:
+            - rows_processed: number of rows processed
+            - fragments_written: number of fragments written
+            - indices_rebuilt: number of indices rebuilt
+        """
+        stats = await self._inner.cluster(
+            target_rows_per_fragment=target_rows_per_fragment
+        )
+        return {
+            "rows_processed": stats.rows_processed,
+            "fragments_written": stats.fragments_written,
+            "indices_rebuilt": stats.indices_rebuilt,
+        }
 
     async def list_indices(self) -> Iterable[IndexConfig]:
         """

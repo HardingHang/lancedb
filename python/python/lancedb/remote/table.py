@@ -637,6 +637,22 @@ class RemoteTable(Table):
         )
         pass
 
+    def cluster_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the clustering configuration for this table.
+        """
+        return LOOP.run(self._table.cluster_config())
+
+    def cluster(
+        self, *, target_rows_per_fragment: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Cluster the table data by clustering keys.
+        """
+        return LOOP.run(
+            self._table.cluster(target_rows_per_fragment=target_rows_per_fragment)
+        )
+
     def count_rows(self, filter: Optional[str] = None) -> int:
         return LOOP.run(self._table.count_rows(filter))
 

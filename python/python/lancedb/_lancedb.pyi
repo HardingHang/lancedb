@@ -113,6 +113,7 @@ class Connection(object):
         storage_options: Optional[Dict[str, str]] = None,
         storage_options_provider: Optional[StorageOptionsProvider] = None,
         location: Optional[str] = None,
+        cluster_by: Optional[List[str]] = None,
     ) -> Table: ...
     async def create_empty_table(
         self,
@@ -123,6 +124,7 @@ class Connection(object):
         storage_options: Optional[Dict[str, str]] = None,
         storage_options_provider: Optional[StorageOptionsProvider] = None,
         location: Optional[str] = None,
+        cluster_by: Optional[List[str]] = None,
     ) -> Table: ...
     async def open_table(
         self,
@@ -210,6 +212,10 @@ class Table:
         cleanup_since_ms: Optional[int] = None,
         delete_unverified: Optional[bool] = None,
     ) -> OptimizeStats: ...
+    async def cluster_config(self) -> Optional[Dict[str, Any]]: ...
+    async def cluster(
+        self, *, target_rows_per_fragment: Optional[int] = None
+    ) -> ClusterStats: ...
     async def uri(self) -> str: ...
     async def initial_storage_options(self) -> Optional[Dict[str, str]]: ...
     async def latest_storage_options(self) -> Optional[Dict[str, str]]: ...
@@ -380,6 +386,11 @@ class RemovalStats:
 class OptimizeStats:
     compaction: CompactionStats
     prune: RemovalStats
+
+class ClusterStats:
+    rows_processed: int
+    fragments_written: int
+    indices_rebuilt: int
 
 class Tag(TypedDict):
     version: int

@@ -14,7 +14,7 @@
 | Phase 1 | ✅ 已完成 | 健壮性 - 错误处理和流式处理 |
 | Phase 2 | ✅ 已完成 | 索引重建 |
 | Phase 3 | ✅ 已完成 | Hilbert算法 - 多维聚簇 |
-| Phase 4 | ⏳ 未开始 | Python绑定 |
+| Phase 4 | ✅ 已完成 | Python绑定 |
 | Phase 5 | ⏳ 未开始 | Node.js绑定 |
 | Phase 6 | ⏳ 未开始 | 完善与文档 |
 
@@ -250,6 +250,50 @@
 - **集成测试**: 14个（原 5 + Phase 1 5 + Phase 2 2 + 新增 5 - 更新 1 个旧测试）
   - 实际分布：Phase 0/1/2/3 集成测试共 14个
 - **全部通过**: ✅
+
+---
+
+## Phase 4 完成总结 ✅
+
+### 已实现功能
+
+#### 1. PyO3 绑定扩展 (`python/src/table.rs` + `python/src/connection.rs`)
+- **`ClusterStats` PyO3 类**: `rows_processed`, `fragments_written`, `indices_rebuilt`
+- **`Table.cluster_config()`**: 返回 `Option<Py<PyDict>>`，包含 `keys`, `algorithm`, `algorithm_params`
+- **`Table.cluster()`**: 接收 `target_rows_per_fragment: Option<usize>`，调用 `OptimizeAction::Cluster`，返回 `ClusterStats`
+- **`Connection.create_table` / `create_empty_table`**: 新增 `cluster_by: Option<Vec<String>>` 参数
+
+#### 2. Python 类型桩 (`python/lancedb/_lancedb.pyi`)
+- 添加 `ClusterStats` 类型声明
+- `Table` 接口添加 `cluster_config()` 和 `cluster()` 异步方法签名
+- `Connection` 创建表方法添加 `cluster_by` 参数签名
+
+#### 3. Python 高层 API (`python/lancedb/table.py` + `python/lancedb/db.py` + `python/lancedb/remote/table.py`)
+- `Table` ABC: 增加抽象方法 `cluster_config()` 和 `cluster()`
+- `AsyncTable`: 异步实现，将 `ClusterStats` 转换为 Python `dict`
+- `LanceTable` / `RemoteTable`: 同步包装，使用 `LOOP.run()` 调用异步实现
+- `LanceDBConnection` / `AsyncConnection`: `create_table` 传递 `cluster_by` 到 Rust 层
+
+#### 4. 关键实现决策
+- **独立的 `cluster()` 方法**: 不扩展现有的 `optimize()`（其硬编码了 Compact + Prune + Index），保持概念清晰
+- **`serde_json::Value` 转换**: 通过 `json.loads` 将 `algorithm_params` 转为 Python 对象
+- **数据集更新修复**: `execute_cluster_direct` 中从 `table.dataset.reload()` 改为 `table.dataset.update(new_dataset)`，解决 `WriteMode::Overwrite` 后数据集缓存未刷新问题
+
+#### 5. 新增测试 (7个)
+| 测试函数 | 场景 | 验证点 |
+|---------|------|--------|
+| `test_cluster_config_not_set` | 无聚簇配置表 | `cluster_config()` 返回 `None` |
+| `test_cluster_config` | 使用 `cluster_by=["id"]` 创建表（同步） | 配置字典包含正确 `keys` 和 `algorithm` |
+| `test_cluster_config_async` | 同上（异步） | 异步 API 正常工作 |
+| `test_cluster` | 1D 聚簇并执行 cluster（同步） | `rows_processed=3`，数据物理排序为 `[1,2,3]` |
+| `test_cluster_async` | 同上（异步） | 异步 API 正常工作 |
+| `test_cluster_2d` | 2D Hilbert 聚簇并执行 cluster（同步） | `algorithm="hilbert"`，操作成功完成 |
+| `test_cluster_2d_async` | 同上（异步） | 异步 API 正常工作 |
+
+### 测试统计
+- **Python 测试**: `python/tests/test_table.py` 82个测试全部通过（含新增 7 个 cluster 测试）
+- **Rust 测试**: 34个 clustering 测试全部通过
+- **Lint/Format**: `make check` 和 `make format` 通过
 
 ---
 

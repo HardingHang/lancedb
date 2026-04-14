@@ -99,15 +99,15 @@ pub async fn execute_cluster_direct(
 
     // Write sorted data
     // Lance's WriteMode::Overwrite is atomic - if this fails, original data is untouched
-    lance::Dataset::write(reader, &uri, Some(write_params))
+    let new_dataset = lance::Dataset::write(reader, &uri, Some(write_params))
         .await
         .map_err(|e| crate::Error::Other {
             message: format!("Failed to write clustered data: {}", e),
             source: Some(Box::new(e)),
         })?;
 
-    // Reload dataset to get the updated view
-    table.dataset.reload().await?;
+    // Update the table's dataset reference to point to the new version
+    table.dataset.update(new_dataset);
 
     Ok(ClusterStats {
         rows_processed: row_count,

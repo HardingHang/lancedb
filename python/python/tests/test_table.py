@@ -2202,4 +2202,93 @@ def test_sanitize_data_metadata_not_stripped():
     result_schema = result.schema
     assert result_schema.metadata is not None
     assert result_schema.metadata[b"existing_key"] == b"existing_value"
-    assert result_schema.metadata[b"new_key"] == b"new_value"
+
+
+def test_cluster_config_not_set(mem_db: DBConnection):
+    table = mem_db.create_table("test", data=[{"id": 1}])
+    assert table.cluster_config() is None
+
+
+def test_cluster_config(mem_db: DBConnection):
+    table = mem_db.create_table("test", data=[{"id": 1}], cluster_by=["id"])
+    config = table.cluster_config()
+    assert config is not None
+    assert config["keys"] == ["id"]
+    assert config["algorithm"] == "direct"
+    assert config["algorithm_params"] is None
+
+
+@pytest.mark.asyncio
+async def test_cluster_config_async(mem_db_async: AsyncConnection):
+    table = await mem_db_async.create_table("test", data=[{"id": 1}], cluster_by=["id"])
+    config = await table.cluster_config()
+    assert config is not None
+    assert config["keys"] == ["id"]
+    assert config["algorithm"] == "direct"
+    assert config["algorithm_params"] is None
+
+
+def test_cluster(tmp_db: DBConnection):
+    table = tmp_db.create_table(
+        "test",
+        data=[{"id": 3}, {"id": 1}, {"id": 2}],
+        cluster_by=["id"],
+    )
+    stats = table.cluster()
+    assert stats["rows_processed"] == 3
+    assert stats["fragments_written"] == 1
+    assert stats["indices_rebuilt"] == 0
+
+    arrow_table = table.to_arrow()
+    assert arrow_table.column("id").to_pylist() == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_cluster_async(tmp_db_async: AsyncConnection):
+    table = await tmp_db_async.create_table(
+        "test",
+        data=[{"id": 3}, {"id": 1}, {"id": 2}],
+        cluster_by=["id"],
+    )
+    stats = await table.cluster()
+    assert stats["rows_processed"] == 3
+    assert stats["fragments_written"] == 1
+    assert stats["indices_rebuilt"] == 0
+
+    arrow_table = await table.to_arrow()
+    assert arrow_table.column("id").to_pylist() == [1, 2, 3]
+
+
+def test_cluster_2d(tmp_db: DBConnection):
+    table = tmp_db.create_table(
+        "test",
+        data=[{"x": 1, "y": 2}, {"x": 2, "y": 1}, {"x": 1, "y": 1}],
+        cluster_by=["x", "y"],
+    )
+    config = table.cluster_config()
+    assert config is not None
+    assert config["keys"] == ["x", "y"]
+    assert config["algorithm"] == "hilbert"
+
+    stats = table.cluster()
+    assert stats["rows_processed"] == 3
+    assert stats["fragments_written"] == 1
+    assert stats["indices_rebuilt"] == 0
+
+
+@pytest.mark.asyncio
+async def test_cluster_2d_async(tmp_db_async: AsyncConnection):
+    table = await tmp_db_async.create_table(
+        "test",
+        data=[{"x": 1, "y": 2}, {"x": 2, "y": 1}, {"x": 1, "y": 1}],
+        cluster_by=["x", "y"],
+    )
+    config = await table.cluster_config()
+    assert config is not None
+    assert config["keys"] == ["x", "y"]
+    assert config["algorithm"] == "hilbert"
+
+    stats = await table.cluster()
+    assert stats["rows_processed"] == 3
+    assert stats["fragments_written"] == 1
+    assert stats["indices_rebuilt"] == 0

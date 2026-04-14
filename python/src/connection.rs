@@ -107,7 +107,7 @@ impl Connection {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (name, mode, data, namespace=vec![], storage_options=None, storage_options_provider=None, location=None))]
+    #[pyo3(signature = (name, mode, data, namespace=vec![], storage_options=None, storage_options_provider=None, location=None, cluster_by=None))]
     pub fn create_table<'a>(
         self_: PyRef<'a, Self>,
         name: String,
@@ -117,6 +117,7 @@ impl Connection {
         storage_options: Option<HashMap<String, String>>,
         storage_options_provider: Option<Py<PyAny>>,
         location: Option<String>,
+        cluster_by: Option<Vec<String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let inner = self_.get_inner()?.clone();
 
@@ -138,6 +139,10 @@ impl Connection {
         if let Some(location) = location {
             builder = builder.location(location);
         }
+        if let Some(columns) = cluster_by {
+            let cols: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
+            builder = builder.cluster_by(&cols);
+        }
 
         future_into_py(self_.py(), async move {
             let table = builder.execute().await.infer_error()?;
@@ -146,7 +151,7 @@ impl Connection {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (name, mode, schema, namespace=vec![], storage_options=None, storage_options_provider=None, location=None))]
+    #[pyo3(signature = (name, mode, schema, namespace=vec![], storage_options=None, storage_options_provider=None, location=None, cluster_by=None))]
     pub fn create_empty_table<'a>(
         self_: PyRef<'a, Self>,
         name: String,
@@ -156,6 +161,7 @@ impl Connection {
         storage_options: Option<HashMap<String, String>>,
         storage_options_provider: Option<Py<PyAny>>,
         location: Option<String>,
+        cluster_by: Option<Vec<String>>,
     ) -> PyResult<Bound<'a, PyAny>> {
         let inner = self_.get_inner()?.clone();
 
@@ -175,6 +181,10 @@ impl Connection {
         }
         if let Some(location) = location {
             builder = builder.location(location);
+        }
+        if let Some(columns) = cluster_by {
+            let cols: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
+            builder = builder.cluster_by(&cols);
         }
 
         future_into_py(self_.py(), async move {

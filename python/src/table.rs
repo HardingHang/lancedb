@@ -19,7 +19,7 @@ use lancedb::table::{
     Table as LanceDbTable,
 };
 use pyo3::{
-    Bound, FromPyObject, Py, PyAny, PyRef, PyResult, Python,
+    Bound, FromPyObject, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
     exceptions::{PyKeyError, PyRuntimeError, PyValueError},
     pyclass, pymethods,
     types::{IntoPyDict, PyAnyMethods, PyDict, PyDictMethods},
@@ -60,6 +60,18 @@ pub struct OptimizeStats {
     pub compaction: CompactionStats,
     /// Statistics about the removal operation
     pub prune: RemovalStats,
+}
+
+/// Statistics about a clustering operation
+#[pyclass(get_all)]
+#[derive(Clone, Debug)]
+pub struct ClusterStats {
+    /// Number of rows processed
+    pub rows_processed: u64,
+    /// Number of fragments written
+    pub fragments_written: u64,
+    /// Number of indices rebuilt
+    pub indices_rebuilt: u64,
 }
 
 #[pyclass(get_all)]
@@ -770,6 +782,60 @@ impl Table {
                     bytes_removed: prune_stats.bytes_removed,
                     old_versions_removed: prune_stats.old_versions,
                 },
+            })
+        })
+    }
+
+    /// Get the clustering configuration for this table.
+    pub fn cluster_config(self_: PyRef<'_, Self>) -> PyResult<Bound<'_, PyAny>> {
+        let inner = self_.inner_ref()?.clone();
+        future_into_py(self_.py(), async move {
+            let config = inner.cluster_config().await.infer_error()?;
+            Python::with_gil(|py| {
+                Ok(match config {
+                    Some(config) => {
+                        let dict = PyDict::new(py);
+                        dict.set_item("keys", config.keys)?;
+                        dict.set_item("algorithm", config.algorithm)?;
+                        let params = match config.algorithm_params {
+                            Some(params) => {
+                                let json_str = serde_json::to_string(&params)
+                                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                                let py_obj =
+                                    py.import("json")?.getattr("loads")?.call1((json_str,))?;
+                                Some(py_obj.unbind())
+                            }
+                            None => None,
+                        };
+                        dict.set_item("algorithm_params", params)?;
+                        Some(dict.into_py_any(py)?)
+                    }
+                    None => None,
+                })
+            })
+        })
+    }
+
+    /// Cluster the table data by clustering keys.
+    #[pyo3(signature = (target_rows_per_fragment=None))]
+    pub fn cluster(
+        self_: PyRef<'_, Self>,
+        target_rows_per_fragment: Option<usize>,
+    ) -> PyResult<Bound<'_, PyAny>> {
+        let inner = self_.inner_ref()?.clone();
+        future_into_py(self_.py(), async move {
+            let stats = inner
+                .optimize(OptimizeAction::Cluster {
+                    full: true,
+                    target_rows_per_fragment,
+                })
+                .await
+                .infer_error()?;
+            let cluster_stats = stats.cluster.unwrap();
+            Ok(ClusterStats {
+                rows_processed: cluster_stats.rows_processed as u64,
+                fragments_written: cluster_stats.fragments_written as u64,
+                indices_rebuilt: cluster_stats.indices_rebuilt as u64,
             })
         })
     }
