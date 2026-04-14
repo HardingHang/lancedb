@@ -12,7 +12,7 @@
 |------|------|---------|
 | Phase 0 | ✅ 已完成 | MVP - 1维聚簇核心实现 |
 | Phase 1 | ✅ 已完成 | 健壮性 - 错误处理和流式处理 |
-| Phase 2 | ⏳ 未开始 | 索引重建 |
+| Phase 2 | ✅ 已完成 | 索引重建 |
 | Phase 3 | ⏳ 未开始 | Hilbert算法 - 多维聚簇 |
 | Phase 4 | ⏳ 未开始 | Python绑定 |
 | Phase 5 | ⏳ 未开始 | Node.js绑定 |
@@ -173,6 +173,41 @@
 | `test_concurrent_cluster_conflict` | 数据排序正确性 | 无序数据 [3,1,2] 聚簇后变为有序 [1,2,3] |
 | `test_cluster_streaming_with_target_rows` | 大数据集流式分块 | 100行数据按 target_rows=25 分成 4 个 fragments，数据全局有序 |
 | `test_cluster_transaction_atomicity` | 事务原子性保证 | Lance 版本系统确保原数据可访问，聚簇创建新版本，可通过 `checkout()` 回溯 |
+
+---
+
+## Phase 2 完成总结 ✅
+
+### 已实现功能
+
+#### 1. 索引重建集成 (`table/optimize.rs`)
+- **配置捕获**: Cluster 执行前自动记录当前所有索引配置 (`table.list_indices()`)
+- **版本快照**: 记录操作前的 dataset 版本号，用于失败回滚
+- **自动重建流程**:
+  1. 数据全局排序并重写 (`WriteMode::Overwrite`)
+  2. 遍历原有索引，逐个删除旧索引并创建新索引
+  3. 使用原始 `IndexType` 重建（scalar 索引精确重建）
+- **Vector 索引处理**: 由于 Lance 当前版本在 manifest 中不保存 vector index 的完整构建参数（num_partitions, num_sub_vectors 等），暂时使用 `Index::Auto` 回退重建
+- **失败回滚**: 索引重建失败时自动 `as_time_travel` 回滚到操作前版本
+
+#### 2. 支持的索引类型
+| 类型 | 重建方式 | 状态 |
+|------|---------|------|
+| BTree | 精确重建 | ✅ |
+| Bitmap | 精确重建 | ✅ |
+| LabelList | 精确重建 | ✅ |
+| FTS | 精确重建 | ✅ |
+| Vector (IVF*) | `Index::Auto` 回退 | ✅（受 Lance 元数据限制）|
+
+#### 3. 新增测试 (2个)
+| 测试函数 | 场景 | 验证点 |
+|---------|------|--------|
+| `test_cluster_rebuilds_btree_index` | 单 BTree 索引重建 | Cluster 后索引仍存在、数据正确排序、索引覆盖全部行 |
+| `test_cluster_rebuilds_multiple_indices` | 多个 BTree 索引重建 | `indices_rebuilt=2`、所有索引功能正常 |
+
+### 测试统计
+- **总计**: 24个测试 + 1个文档测试（Phase 0: 5集成 + Phase 1: 5集成 + Phase 2: 2集成 + 12单元）
+- **全部通过**: ✅
 
 ---
 
