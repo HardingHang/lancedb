@@ -39,12 +39,15 @@ def generate_data(n_rows: int, distribution: str = "uniform", seed: int = 42) ->
     else:
         raise ValueError(f"Unknown distribution: {distribution}")
 
+    categories = rng.choice(["A", "B", "C", "D"], n_rows)
+    category_map = {"A": 0, "B": 1, "C": 2, "D": 3}
     df = pd.DataFrame({
         "id": np.arange(n_rows, dtype=np.int64),
         "lat": lat.astype(np.float32),
         "lng": lng.astype(np.float32),
         "timestamp": rng.integers(0, 1_000_000_000, n_rows).astype(np.int64),
-        "category": rng.choice(["A", "B", "C", "D"], n_rows),
+        "category": categories,
+        "category_id": np.array([category_map[c] for c in categories], dtype=np.int32),
         "price": rng.exponential(100.0, n_rows).astype(np.float32),
         "embedding": [rng.random(128).astype(np.float32).tolist() for _ in range(n_rows)],
         "text": [f"item_{i}" for i in range(n_rows)],

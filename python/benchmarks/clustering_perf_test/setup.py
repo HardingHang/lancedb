@@ -31,7 +31,7 @@ def setup_group(
     if table_name in db.table_names():
         db.drop_table(table_name)
 
-    if group in ("A", "C"):
+    if group in ("A", "C", "F"):
         table = db.create_table(table_name, data=data, mode="overwrite")
     else:
         table = db.create_table(
@@ -47,7 +47,7 @@ def setup_group(
     if group in ("C", "D") and cluster_keys:
         table.create_scalar_index(cluster_keys[0], index_type="BTREE")
 
-    if group == "E" and vector_index_config is not None:
+    if group in ("E", "F") and vector_index_config is not None:
         table.create_index(
             vector_column_name=vector_index_config["column"],
             index_type=vector_index_config["index_type"],

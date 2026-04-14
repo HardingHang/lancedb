@@ -53,12 +53,14 @@ def get_vector_index_config(scale: str) -> dict[str, object]:
         raise ValueError(f"Unknown scale: {scale}")
     return _VECTOR_INDEX_CONFIGS[scale]
 
-# Clustering configurations per dimensionality
+# Clustering configurations per dimensionality.
+# NOTE: multi-dimensional clustering currently supports numeric types only;
+# category_id (int32) is used instead of category (utf8) for 3D/4D.
 CLUSTER_CONFIGS = {
     1: {"keys": ["timestamp"]},
     2: {"keys": ["lat", "lng"]},
-    3: {"keys": ["lat", "lng", "category"]},
-    4: {"keys": ["lat", "lng", "category", "timestamp"]},
+    3: {"keys": ["lat", "lng", "category_id"]},
+    4: {"keys": ["lat", "lng", "category_id", "timestamp"]},
 }
 
 # Group names for reports

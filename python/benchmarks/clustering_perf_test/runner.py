@@ -198,7 +198,7 @@ def run_vector_benchmark(
     db_uri = DATA_DIR / f"phase3_{scale}_{distribution}_{dimensions}d"
     print(f"Setting up benchmark groups in {db_uri}...")
     groups = {}
-    for group in ("A", "E"):
+    for group in ("A", "F", "E"):
         groups[group] = setup_group(
             db_uri,
             group,
