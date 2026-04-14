@@ -17,6 +17,7 @@ from clustering_perf_test.config import (
     TEST_RUNS,
     SELECTIVITIES,
     CLUSTER_CONFIGS,
+    get_vector_index_config,
 )
 from clustering_perf_test.data_generator import generate_data
 from clustering_perf_test.setup import setup_group
@@ -26,10 +27,18 @@ from clustering_perf_test.queries import (
     scalar_point_query,
     scalar_full_scan_agg,
     scalar_mixed_condition_query,
+    vector_pure_ann,
+    vector_with_2d_filter,
+    vector_with_1d_filter,
     make_random_vector,
 )
 from clustering_perf_test.metrics import measure_query
-from clustering_perf_test.reporter import format_scalar_report, save_json_results, metrics_to_dict
+from clustering_perf_test.reporter import (
+    format_scalar_report,
+    format_vector_report,
+    save_json_results,
+    metrics_to_dict,
+)
 
 
 def run_scalar_benchmark(
@@ -166,6 +175,107 @@ def _percentile_range(values: list[float], coverage: float) -> tuple[float, floa
     return float(sorted_vals[start_idx]), float(sorted_vals[end_idx])
 
 
+def run_vector_benchmark(
+    scale: str,
+    distribution: str,
+    dimensions: int,
+    quick: bool = False,
+) -> None:
+    """Run vector-scalar fusion benchmarks for the specified configuration."""
+    config = SCALE_CONFIGS[scale]
+    n_rows = config["n_rows"]
+    target_rows = config.get("target_rows_per_fragment")
+    cluster_keys = CLUSTER_CONFIGS[dimensions]["keys"]
+    vector_config = get_vector_index_config(scale)
+
+    print(
+        f"[Vector Benchmark] scale={scale}, rows={n_rows}, "
+        f"dist={distribution}, dims={dimensions}"
+    )
+    print("Generating data...")
+    data = generate_data(n_rows, distribution)
+
+    db_uri = DATA_DIR / f"phase3_{scale}_{distribution}_{dimensions}d"
+    print(f"Setting up benchmark groups in {db_uri}...")
+    groups = {}
+    for group in ("A", "E"):
+        groups[group] = setup_group(
+            db_uri,
+            group,
+            data,
+            cluster_keys=cluster_keys,
+            target_rows_per_fragment=target_rows,
+            vector_index_config=vector_config,
+        )
+
+    selectivities = [0.1] if quick else SELECTIVITIES
+    lat_vals = data["lat"].to_pylist()
+    lng_vals = data["lng"].to_pylist()
+    ts_vals = data["timestamp"].to_pylist()
+    query_vec = make_random_vector(dim=128, seed=42)
+
+    results: dict = {}
+    warm_runs = 1 if quick else WARMUP_RUNS
+    test_runs = 3 if quick else TEST_RUNS
+    limit = 100
+
+    # V1: Pure vector ANN (no filter)
+    for group_name, table in groups.items():
+        metrics = measure_query(
+            lambda s={}, t=table: vector_pure_ann(t, s, query_vec, limit=limit),
+            warmup_runs=warm_runs,
+            test_runs=test_runs,
+        )
+        results.setdefault("V1_Pure_Vector", {}).setdefault("none", {})[
+            group_name
+        ] = metrics_to_dict(metrics)
+
+    # V2: Vector + 2D scalar pre-filter
+    for sel in selectivities:
+        sel_label = f"{sel*100:.1f}%"
+        lat_min, lat_max = _percentile_range(lat_vals, sel)
+        lng_min, lng_max = _percentile_range(lng_vals, sel)
+
+        for group_name, table in groups.items():
+            metrics = measure_query(
+                lambda s={}, t=table: vector_with_2d_filter(
+                    t, s, query_vec, lat_min, lat_max, lng_min, lng_max, limit=limit
+                ),
+                warmup_runs=warm_runs,
+                test_runs=test_runs,
+            )
+            results.setdefault("V2_Vector_2D_Filter", {}).setdefault(sel_label, {})[
+                group_name
+            ] = metrics_to_dict(metrics)
+
+    # V3: Vector + 1D timestamp pre-filter
+    for sel in selectivities:
+        sel_label = f"{sel*100:.1f}%"
+        ts_min, ts_max = _percentile_range(ts_vals, sel)
+        ts_min_int = int(ts_min)
+        ts_max_int = int(ts_max)
+
+        for group_name, table in groups.items():
+            metrics = measure_query(
+                lambda s={}, t=table: vector_with_1d_filter(
+                    t, s, query_vec, ts_min_int, ts_max_int, limit=limit
+                ),
+                warmup_runs=warm_runs,
+                test_runs=test_runs,
+            )
+            results.setdefault("V3_Vector_1D_Filter", {}).setdefault(sel_label, {})[
+                group_name
+            ] = metrics_to_dict(metrics)
+
+    # Save outputs
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    json_path = RESULTS_DIR / f"phase3_vector_{scale}_{distribution}_{dimensions}d.json"
+    report_path = RESULTS_DIR / f"phase3_vector_{scale}_{distribution}_{dimensions}d.md"
+    save_json_results(results, json_path)
+    format_vector_report(results, report_path)
+    print(f"Results saved to {json_path} and {report_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="LanceDB Clustering Performance Benchmark")
     parser.add_argument(
@@ -202,6 +312,9 @@ def main() -> None:
 
     if args.scenario in ("scalar", "all"):
         run_scalar_benchmark(args.scale, args.distribution, args.dimensions, args.quick)
+
+    if args.scenario in ("vector", "all"):
+        run_vector_benchmark(args.scale, args.distribution, args.dimensions, args.quick)
 
     print("Benchmark completed.")
 

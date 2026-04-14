@@ -22,26 +22,13 @@ def _compute_speedup(baseline: dict[str, Any], target: dict[str, Any]) -> dict[s
     return speedups
 
 
-def format_scalar_report(
+def _format_report(
+    title: str,
     results: dict[str, dict[str, dict[str, Any]]],
-    output_path: Path | None = None,
 ) -> str:
-    """Format scalar benchmark results as a Markdown report.
-
-    Parameters
-    ----------
-    results : dict
-        Nested mapping: query_name -> selectivity -> group -> metrics dict.
-    output_path : Path | None
-        If provided, the report is written to this path.
-
-    Returns
-    -------
-    str
-        Markdown report content.
-    """
+    """Shared formatting logic for benchmark reports."""
     lines: list[str] = [
-        "# Scalar Query Benchmark Report",
+        f"# {title}",
         "",
         "## Results Summary",
         "",
@@ -71,7 +58,39 @@ def format_scalar_report(
                 )
         lines.append("")
 
-    report = "\n".join(lines)
+    return "\n".join(lines)
+
+
+def format_scalar_report(
+    results: dict[str, dict[str, dict[str, Any]]],
+    output_path: Path | None = None,
+) -> str:
+    """Format scalar benchmark results as a Markdown report.
+
+    Parameters
+    ----------
+    results : dict
+        Nested mapping: query_name -> selectivity -> group -> metrics dict.
+    output_path : Path | None
+        If provided, the report is written to this path.
+
+    Returns
+    -------
+    str
+        Markdown report content.
+    """
+    report = _format_report("Scalar Query Benchmark Report", results)
+    if output_path:
+        output_path.write_text(report, encoding="utf-8")
+    return report
+
+
+def format_vector_report(
+    results: dict[str, dict[str, dict[str, Any]]],
+    output_path: Path | None = None,
+) -> str:
+    """Format vector benchmark results as a Markdown report."""
+    report = _format_report("Vector Query Benchmark Report", results)
     if output_path:
         output_path.write_text(report, encoding="utf-8")
     return report
