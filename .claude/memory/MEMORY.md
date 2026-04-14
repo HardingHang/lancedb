@@ -1,0 +1,6 @@
+- [LanceDB Clustering Phase 1](clustering-phase1.md) — Phase 1 complete: boundary tests, streaming, transaction atomicity (22 tests passing)
+- [LanceDB Clustering Phase 2](clustering-phase2.md) — Phase 2 complete: automatic index rebuild after clustering with rollback on failure
+- [LanceDB Clustering Phase 3](clustering-phase3.md) — Phase 3 complete: Hilbert curve multi-dimensional clustering (2-4D, 35 tests passing)
+- [LanceDB Clustering Phase 4](clustering-phase4.md) — Phase 4 complete: Python bindings for clustering with 7 integration tests passing
+- [TDD Core Principles](tdd-core-principles.md) — Test-Driven Development iron law and red-green-refactor cycle rules
+- [Testing Anti-Patterns Reference](testing-anti-patterns.md) — Common testing mistakes: mock testing, test-only methods, incomplete mocks
