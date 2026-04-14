@@ -1,0 +1,152 @@
+{
+  "V1_Pure_Vector": {
+    "none": {
+      "A": {
+        "latency_p50_ms": 166.11157753504813,
+        "latency_p95_ms": 429.60705597652145,
+        "latency_p99_ms": 671.0606982721943,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 18.201755010522902,
+        "latency_p95_ms": 18.80239212187007,
+        "latency_p99_ms": 18.901407869998366,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    }
+  },
+  "V2_Vector_2D_Filter": {
+    "0.1%": {
+      "A": {
+        "latency_p50_ms": 145.21489047911018,
+        "latency_p95_ms": 245.86319094523816,
+        "latency_p99_ms": 533.5544558428223,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 13.711413950659335,
+        "latency_p95_ms": 14.359230734407902,
+        "latency_p99_ms": 14.729863703250885,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    },
+    "1.0%": {
+      "A": {
+        "latency_p50_ms": 135.93626988586038,
+        "latency_p95_ms": 313.8129980536178,
+        "latency_p99_ms": 330.25366513524204,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 13.377748080529273,
+        "latency_p95_ms": 13.897201535291972,
+        "latency_p99_ms": 15.907499478198584,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    },
+    "10.0%": {
+      "A": {
+        "latency_p50_ms": 110.7085325056687,
+        "latency_p95_ms": 158.7856253492646,
+        "latency_p99_ms": 168.08471623575312,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 13.337900396436453,
+        "latency_p95_ms": 13.745949347503483,
+        "latency_p99_ms": 13.852098532952368,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    },
+    "50.0%": {
+      "A": {
+        "latency_p50_ms": 124.7567581012845,
+        "latency_p95_ms": 169.22344104386875,
+        "latency_p99_ms": 254.56405379809425,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 17.198679503053427,
+        "latency_p95_ms": 17.95702331000939,
+        "latency_p99_ms": 18.209818929899484,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    }
+  },
+  "V3_Vector_1D_Filter": {
+    "0.1%": {
+      "A": {
+        "latency_p50_ms": 123.46934899687767,
+        "latency_p95_ms": 154.6569181024097,
+        "latency_p99_ms": 161.059629234951,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 12.727659428492188,
+        "latency_p95_ms": 13.153478712774813,
+        "latency_p99_ms": 13.160131727345288,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    },
+    "1.0%": {
+      "A": {
+        "latency_p50_ms": 113.58032643329352,
+        "latency_p95_ms": 183.15929230302598,
+        "latency_p99_ms": 446.56112968921616,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 14.144259039312601,
+        "latency_p95_ms": 14.451113913673908,
+        "latency_p99_ms": 14.480645845178515,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    },
+    "10.0%": {
+      "A": {
+        "latency_p50_ms": 94.48383504059166,
+        "latency_p95_ms": 122.47427306137979,
+        "latency_p99_ms": 130.07930821739137,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 15.16882749274373,
+        "latency_p95_ms": 17.58172038244084,
+        "latency_p99_ms": 19.63761849561706,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    },
+    "50.0%": {
+      "A": {
+        "latency_p50_ms": 113.47612552344799,
+        "latency_p95_ms": 141.96907823206857,
+        "latency_p99_ms": 154.7923348867334,
+        "bytes_read_avg": 512004096.0,
+        "iops_avg": 33.0
+      },
+      "E": {
+        "latency_p50_ms": 19.928808556869626,
+        "latency_p95_ms": 20.671566494274884,
+        "latency_p99_ms": 20.83634371170774,
+        "bytes_read_avg": 0.0,
+        "iops_avg": 0.0
+      }
+    }
+  }
+}
