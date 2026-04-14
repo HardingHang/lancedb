@@ -20,12 +20,10 @@ class QueryMetrics:
     latency_p95_ms: float = 0.0
     latency_p99_ms: float = 0.0
     bytes_read_avg: float = 0.0
-    fragments_scanned_avg: float = 0.0
-    rows_scanned_avg: float = 0.0
+    iops_avg: float = 0.0
     raw_latencies_ms: list[float] = field(default_factory=list)
     raw_bytes_read: list[int] = field(default_factory=list)
-    raw_fragments_scanned: list[int] = field(default_factory=list)
-    raw_rows_scanned: list[int] = field(default_factory=list)
+    raw_iops: list[int] = field(default_factory=list)
 
 
 def measure_query(
@@ -55,8 +53,7 @@ def measure_query(
 
     latencies: list[float] = []
     bytes_read_list: list[int] = []
-    fragments_scanned_list: list[int] = []
-    rows_scanned_list: list[int] = []
+    iops_list: list[int] = []
 
     for _ in range(test_runs):
         stats: dict = {}
@@ -64,18 +61,15 @@ def measure_query(
         query_fn(stats)
         latencies.append((time.perf_counter() - start) * 1000.0)
         bytes_read_list.append(stats.get("bytes_read", 0))
-        fragments_scanned_list.append(stats.get("fragments_scanned", 0))
-        rows_scanned_list.append(stats.get("rows_scanned", 0))
+        iops_list.append(stats.get("iops", 0))
 
     return QueryMetrics(
         latency_p50_ms=float(np.percentile(latencies, 50)),
         latency_p95_ms=float(np.percentile(latencies, 95)),
         latency_p99_ms=float(np.percentile(latencies, 99)),
         bytes_read_avg=float(np.mean(bytes_read_list)),
-        fragments_scanned_avg=float(np.mean(fragments_scanned_list)),
-        rows_scanned_avg=float(np.mean(rows_scanned_list)),
+        iops_avg=float(np.mean(iops_list)),
         raw_latencies_ms=latencies,
         raw_bytes_read=bytes_read_list,
-        raw_fragments_scanned=fragments_scanned_list,
-        raw_rows_scanned=rows_scanned_list,
+        raw_iops=iops_list,
     )

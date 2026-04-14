@@ -8,7 +8,6 @@ from pathlib import Path
 import lancedb
 
 from clustering_perf_test.config import VECTOR_INDEX_CONFIG
-from clustering_perf_test.data_generator import generate_data
 
 
 def setup_group(
@@ -34,21 +33,25 @@ def setup_group(
     if table_name in db.table_names():
         db.drop_table(table_name)
 
-    table = db.create_table(table_name, data=data, mode="overwrite")
-
-    if group in ("B", "D", "E") and cluster_keys:
-        table.optimize(
+    if group in ("A", "C"):
+        table = db.create_table(table_name, data=data, mode="overwrite")
+    else:
+        table = db.create_table(
+            table_name,
+            data=data,
+            mode="overwrite",
             cluster_by=cluster_keys,
-            action="cluster",
         )
 
+    if group in ("B", "D", "E") and cluster_keys:
+        table.cluster(target_rows_per_fragment=target_rows_per_fragment)
+
     if group in ("C", "D") and cluster_keys:
-        # Create a scalar index on the first cluster key for simplicity.
-        table.create_index(cluster_keys[0], index_type="BTREE")
+        table.create_scalar_index(cluster_keys[0], index_type="BTREE")
 
     if group == "E":
         table.create_index(
-            VECTOR_INDEX_CONFIG["column"],
+            vector_column_name=VECTOR_INDEX_CONFIG["column"],
             index_type=VECTOR_INDEX_CONFIG["index_type"],
             num_partitions=VECTOR_INDEX_CONFIG["num_partitions"],
             num_sub_vectors=VECTOR_INDEX_CONFIG["num_sub_vectors"],
@@ -63,7 +66,14 @@ def setup_all_groups(
     cluster_keys: list[str],
     target_rows_per_fragment: int | None = None,
 ) -> dict[str, lancedb.table.Table]:
-    """Setup all benchmark groups and return a mapping."""
+    """Setup all benchmark groups and return a mapping.
+
+    WARNING
+    -------
+    Group E builds an IVF_PQ vector index, which can take several minutes at
+    100K+ rows. Scalar benchmark runners should call ``setup_group`` directly
+    for groups A-D to avoid unexpected hangs.
+    """
     groups = {}
     for group in ("A", "B", "C", "D", "E"):
         groups[group] = setup_group(

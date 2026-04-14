@@ -22,7 +22,9 @@ WARMUP_RUNS = 3
 TEST_RUNS = 20
 SELECTIVITIES = [0.001, 0.01, 0.1, 0.5]
 
-# Vector index configuration
+# Vector index configuration.
+# NOTE: IVF_PQ build can be very slow (minutes at 100K+ rows). Do not include
+# group E in scalar-only benchmark paths.
 VECTOR_INDEX_CONFIG = {
     "column": "embedding",
     "index_type": "IVF_PQ",

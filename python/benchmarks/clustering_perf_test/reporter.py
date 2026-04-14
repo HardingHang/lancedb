@@ -12,6 +12,16 @@ from typing import Any
 from clustering_perf_test.metrics import QueryMetrics
 
 
+def _compute_speedup(baseline: dict[str, Any], target: dict[str, Any]) -> dict[str, float]:
+    """Compute speedup and IO reduction relative to baseline."""
+    speedups = {}
+    if baseline.get("latency_p50_ms", 0) > 0 and target.get("latency_p50_ms", 0) > 0:
+        speedups["speedup"] = baseline["latency_p50_ms"] / target["latency_p50_ms"]
+    if baseline.get("bytes_read_avg", 0) > 0 and target.get("bytes_read_avg", 0) > 0:
+        speedups["io_reduction"] = baseline["bytes_read_avg"] / target["bytes_read_avg"]
+    return speedups
+
+
 def format_scalar_report(
     results: dict[str, dict[str, dict[str, Any]]],
     output_path: Path | None = None,
@@ -42,19 +52,22 @@ def format_scalar_report(
         lines.append("")
         lines.append(
             "| Selectivity | Group | Latency P50 (ms) | Latency P95 (ms) | "
-            "Bytes Read | Fragments Scanned |"
+            "Bytes Read | Speedup | IO Reduction |"
         )
         lines.append(
-            "|:---|:---|---:|---:|---:|---:|"
+            "|:---|:---|---:|---:|---:|---:|---:|"
         )
         for selectivity, by_group in by_selectivity.items():
+            baseline = by_group.get("A", {})
             for group, metrics in by_group.items():
+                speedups = _compute_speedup(baseline, metrics) if group != "A" else {}
                 lines.append(
                     f"| {selectivity} | {group} | "
                     f"{metrics['latency_p50_ms']:.2f} | "
                     f"{metrics['latency_p95_ms']:.2f} | "
                     f"{metrics['bytes_read_avg']:.0f} | "
-                    f"{metrics['fragments_scanned_avg']:.1f} |"
+                    f"{speedups.get('speedup', 1.0):.2f}x | "
+                    f"{speedups.get('io_reduction', 1.0):.2f}x |"
                 )
         lines.append("")
 
@@ -82,6 +95,5 @@ def metrics_to_dict(m: QueryMetrics) -> dict[str, Any]:
         "latency_p95_ms": m.latency_p95_ms,
         "latency_p99_ms": m.latency_p99_ms,
         "bytes_read_avg": m.bytes_read_avg,
-        "fragments_scanned_avg": m.fragments_scanned_avg,
-        "rows_scanned_avg": m.rows_scanned_avg,
+        "iops_avg": m.iops_avg,
     }

@@ -13,14 +13,28 @@ import lancedb
 import numpy as np
 
 
-def _collect_stats(scanner, stats_out: dict) -> None:
-    """Execute a scanner and populate stats_out with scan statistics."""
-    scanner.scan_stats_callback = lambda s: stats_out.update({
-        "bytes_read": s.bytes_read,
-        "fragments_scanned": s.fragments_scanned,
-        "rows_scanned": s.rows_scanned,
-    })
+def _collect_stats(ds, stats_out: dict, **scanner_kwargs) -> None:
+    """Execute a scanner and populate stats_out with scan statistics.
+
+    Raises
+    ------
+    RuntimeError
+        If scan_stats_callback is not invoked (e.g. due to API mismatch or
+        unsupported fields), so that silent metric loss is caught immediately.
+    """
+    scanner = ds.scanner(
+        scan_stats_callback=lambda s: stats_out.update({
+            "bytes_read": s.bytes_read,
+            "iops": s.iops,
+        }),
+        **scanner_kwargs,
+    )
     scanner.to_table()
+    if not stats_out:
+        raise RuntimeError(
+            "scan_stats_callback produced no stats. "
+            "This usually means the lance API changed or the callback was ignored."
+        )
 
 
 def scalar_range_query(
@@ -37,8 +51,7 @@ def scalar_range_query(
         f"lat >= {lat_min} AND lat <= {lat_max} "
         f"AND lng >= {lng_min} AND lng <= {lng_max}"
     )
-    scanner = ds.scanner(filter=filter_expr)
-    _collect_stats(scanner, stats_out)
+    _collect_stats(ds, stats_out, filter=filter_expr)
 
 
 def scalar_1d_range_query(
@@ -50,8 +63,7 @@ def scalar_1d_range_query(
     """S2: 1D range query on timestamp."""
     ds = table.to_lance()
     filter_expr = f"timestamp >= {ts_min} AND timestamp <= {ts_max}"
-    scanner = ds.scanner(filter=filter_expr)
-    _collect_stats(scanner, stats_out)
+    _collect_stats(ds, stats_out, filter=filter_expr)
 
 
 def scalar_point_query(
@@ -63,8 +75,7 @@ def scalar_point_query(
     """S3: Point query on lat/lng."""
     ds = table.to_lance()
     filter_expr = f"lat = {lat} AND lng = {lng}"
-    scanner = ds.scanner(filter=filter_expr)
-    _collect_stats(scanner, stats_out)
+    _collect_stats(ds, stats_out, filter=filter_expr)
 
 
 def scalar_full_scan_agg(
@@ -76,8 +87,7 @@ def scalar_full_scan_agg(
     Uses a filter-less scanner to measure raw scan cost.
     """
     ds = table.to_lance()
-    scanner = ds.scanner()
-    _collect_stats(scanner, stats_out)
+    _collect_stats(ds, stats_out)
 
 
 def scalar_mixed_condition_query(
@@ -92,8 +102,7 @@ def scalar_mixed_condition_query(
     filter_expr = (
         f"lat >= {lat_min} AND lat <= {lat_max} AND category = '{category}'"
     )
-    scanner = ds.scanner(filter=filter_expr)
-    _collect_stats(scanner, stats_out)
+    _collect_stats(ds, stats_out, filter=filter_expr)
 
 
 # ---------------------------------------------------------------------------
@@ -113,12 +122,15 @@ def vector_pure_ann(
     lance scanner with a nearest neighbour clause when available.
     """
     ds = table.to_lance()
-    scanner = ds.scanner(nearest={
-        "column": "embedding",
-        "q": query_vec,
-        "k": limit,
-    })
-    _collect_stats(scanner, stats_out)
+    _collect_stats(
+        ds,
+        stats_out,
+        nearest={
+            "column": "embedding",
+            "q": query_vec,
+            "k": limit,
+        },
+    )
 
 
 def vector_with_2d_filter(
@@ -137,7 +149,9 @@ def vector_with_2d_filter(
         f"lat >= {lat_min} AND lat <= {lat_max} "
         f"AND lng >= {lng_min} AND lng <= {lng_max}"
     )
-    scanner = ds.scanner(
+    _collect_stats(
+        ds,
+        stats_out,
         filter=filter_expr,
         nearest={
             "column": "embedding",
@@ -145,7 +159,6 @@ def vector_with_2d_filter(
             "k": limit,
         },
     )
-    _collect_stats(scanner, stats_out)
 
 
 def vector_with_1d_filter(
@@ -159,7 +172,9 @@ def vector_with_1d_filter(
     """V3: Vector ANN with 1D timestamp pre-filter."""
     ds = table.to_lance()
     filter_expr = f"timestamp >= {ts_min} AND timestamp <= {ts_max}"
-    scanner = ds.scanner(
+    _collect_stats(
+        ds,
+        stats_out,
         filter=filter_expr,
         nearest={
             "column": "embedding",
@@ -167,7 +182,6 @@ def vector_with_1d_filter(
             "k": limit,
         },
     )
-    _collect_stats(scanner, stats_out)
 
 
 def make_random_vector(dim: int = 128, seed: int | None = None) -> list[float]:

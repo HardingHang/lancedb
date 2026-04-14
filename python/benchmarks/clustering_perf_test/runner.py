@@ -19,11 +19,13 @@ from clustering_perf_test.config import (
     CLUSTER_CONFIGS,
 )
 from clustering_perf_test.data_generator import generate_data
-from clustering_perf_test.setup import setup_all_groups
+from clustering_perf_test.setup import setup_group
 from clustering_perf_test.queries import (
     scalar_range_query,
     scalar_1d_range_query,
     scalar_point_query,
+    scalar_full_scan_agg,
+    scalar_mixed_condition_query,
     make_random_vector,
 )
 from clustering_perf_test.metrics import measure_query
@@ -48,7 +50,11 @@ def run_scalar_benchmark(
 
     db_uri = DATA_DIR / f"phase2_{scale}_{distribution}_{dimensions}d"
     print(f"Setting up benchmark groups in {db_uri}...")
-    groups = setup_all_groups(db_uri, data, cluster_keys, target_rows)
+    groups = {}
+    for group in ("A", "B", "C", "D"):
+        groups[group] = setup_group(
+            db_uri, group, data, cluster_keys=cluster_keys, target_rows_per_fragment=target_rows
+        )
 
     selectivities = [0.1] if quick else SELECTIVITIES
     lat_vals = data["lat"].to_pylist()
@@ -83,12 +89,14 @@ def run_scalar_benchmark(
         sel_label = f"{sel*100:.1f}%"
         ts_min, ts_max = _percentile_range(ts_vals, sel)
 
+        ts_min_int = int(ts_min)
+        ts_max_int = int(ts_max)
         for group_name, table in groups.items():
             if group_name not in ("A", "B", "C", "D"):
                 continue
 
             metrics = measure_query(
-                lambda s={}, t=table: scalar_1d_range_query(t, s, ts_min, ts_max),
+                lambda s={}, t=table: scalar_1d_range_query(t, s, ts_min_int, ts_max_int),
                 warmup_runs=warm_runs,
                 test_runs=test_runs,
             )
@@ -107,6 +115,37 @@ def run_scalar_benchmark(
             test_runs=test_runs,
         )
         results.setdefault("S3_Point_Query", {}).setdefault("point", {})[group_name] = metrics_to_dict(metrics)
+
+    # S4: Full table scan (A and B only)
+    for group_name, table in groups.items():
+        if group_name not in ("A", "B"):
+            continue
+
+        metrics = measure_query(
+            lambda s={}, t=table: scalar_full_scan_agg(t, s),
+            warmup_runs=warm_runs,
+            test_runs=test_runs,
+        )
+        results.setdefault("S4_Full_Scan", {}).setdefault("all", {})[group_name] = metrics_to_dict(metrics)
+
+    # S5: Mixed condition with partial clustering key hit
+    for sel in selectivities:
+        sel_label = f"{sel*100:.1f}%"
+        lat_min, lat_max = _percentile_range(lat_vals, sel)
+        category = "A"
+
+        for group_name, table in groups.items():
+            if group_name not in ("A", "B", "C", "D"):
+                continue
+
+            metrics = measure_query(
+                lambda s={}, t=table: scalar_mixed_condition_query(
+                    t, s, lat_min, lat_max, category
+                ),
+                warmup_runs=warm_runs,
+                test_runs=test_runs,
+            )
+            results.setdefault("S5_Mixed_Condition", {}).setdefault(sel_label, {})[group_name] = metrics_to_dict(metrics)
 
     # Save outputs
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
