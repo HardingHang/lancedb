@@ -37,14 +37,21 @@
 
 ### 2.3 `iops`
 
-`iops` 在本测试中指 **Lance 数据集扫描器向存储后端发出的读取操作次数**。同样通过 `scan_stats_callback` 采集。
+`iops` 在本测试中指 **Lance `ScanScheduler` 向存储后端提交的数据读取 range 个数**。同样通过 `scan_stats_callback` 采集。
 
-**"1 次 IO"在代码层面的具体含义**：
-- 在 Lance 的存储抽象层中，**1 次 IO = 1 次对底层存储的读取请求**，可能对应以下任一操作：
-  - 打开一个 Fragment 并读取其元数据页（manifest / statistics page）
-  - 读取一个数据 Page（column chunk）的内容
-  - 读取一个文件尾部（footer）以解析 schema 或统计信息
-- 注意：这**不是操作系统层面的 `read()` 系统调用次数**，也不是磁盘扇区读取次数。它是 Lance 内部 `ObjectStore::get` 或 `ObjectStore::get_range` 级别的请求计数。
+**统计口径与计算方法**：
+1. 扫描器在读取一个 fragment 时，会收集所有需要读取的字节区间（如各列的 data page、footer 等）。
+2. **合并**：若多个区间彼此紧邻（间距不超过 `block_size`），`FileScheduler` 会将它们合并为一个大的连续 range。
+3. **切分**：若合并后的 range 超过 `max_iop_size`，会被切分为多个子 range。
+4. **计数**：经过合并/切分后的最终 range 个数，即为 `iops`。
+
+**关键推论**：
+- 当数据在 fragment 内物理连续时（聚簇后），多个小读取会被合并为少数大读取 → **`iops` 显著下降**。
+- 当数据随机分布时（未聚簇），读取区间分散无法合并 → **`iops` 暴涨**，即使 `bytes_read` 不高也会因大量随机 seek 而拖慢查询。
+
+**未覆盖的部分**：
+- **不是**操作系统层面的 `read()` 系统调用次数。
+- **不统计** IVF_PQ 向量索引文件、BTREE 索引页的读取（这些走独立的索引读取路径，不经过数据集扫描器的 `ScanScheduler`）。
 
 ### 2.4 为什么 `bytes_read` 和 `iops` 需要一起看？
 
