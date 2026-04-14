@@ -13,7 +13,7 @@
 | Phase 0 | ✅ 已完成 | MVP - 1维聚簇核心实现 |
 | Phase 1 | ✅ 已完成 | 健壮性 - 错误处理和流式处理 |
 | Phase 2 | ✅ 已完成 | 索引重建 |
-| Phase 3 | ⏳ 未开始 | Hilbert算法 - 多维聚簇 |
+| Phase 3 | ✅ 已完成 | Hilbert算法 - 多维聚簇 |
 | Phase 4 | ⏳ 未开始 | Python绑定 |
 | Phase 5 | ⏳ 未开始 | Node.js绑定 |
 | Phase 6 | ⏳ 未开始 | 完善与文档 |
@@ -207,6 +207,48 @@
 
 ### 测试统计
 - **总计**: 24个测试 + 1个文档测试（Phase 0: 5集成 + Phase 1: 5集成 + Phase 2: 2集成 + 12单元）
+- **全部通过**: ✅
+
+---
+
+## Phase 3 完成总结 ✅
+
+### 已实现功能
+
+#### 1. Hilbert 曲线算法集成 (`table/cluster/algorithm.rs`)
+- **库选择**: 使用 `hilbert_index` crate（支持 2-4 维）替代设计文档中的 `hilbert_curve`（仅 2D）
+- **`HilbertCurveAlgorithm` 实现**:
+  - `prepare`: 扫描所有 batches 计算各维度 min/max
+  - `compute_sort_key`: 将 `ScalarValue` 转为 f64，线性归一化到 `[0, 2^bits-1]`，调用 `to_hilbert_index` 生成排序键
+  - 默认 `bits = 16`，支持通过 `algorithm_params` 配置（`{"bits": N}`）
+  - 运行时校验 `dimension * bits <= 64`，防止 `usize` 溢出
+- **NULL 处理**: 任意聚簇键为 NULL 时，整行 sort key 为空，排在末尾
+
+#### 2. 执行层通用化 (`table/cluster/execute.rs`)
+- **`sort_batch_by_algorithm`**: 基于 `BinaryArray` 的通用排序器
+  - 为每行提取 `ScalarValue`，调用 `algorithm.compute_sort_key`
+  - 使用 Arrow `sort_to_indices(nulls_last)` 重排数据
+- **`execute_cluster_direct`**: 重构为接受 `&dyn ClusteringAlgorithm`
+  - 数据收集后调用 `algorithm.prepare`
+  - 统一支持 DirectSort（1D）和 Hilbert（2-4D）
+
+#### 3. 算法选择 (`table/cluster/mod.rs` + `optimize.rs`)
+- **`ClusteringAlgorithm` trait** 增加 `prepare` 方法（默认空实现）
+- **`get_algorithm`**: 1D 返回 `DirectSortAlgorithm`，2-4D 返回 `HilbertCurveAlgorithm`
+- **`optimize.rs`**: 移除 "Multi-dimensional clustering not yet implemented" 错误，自动按维度选择算法
+
+#### 4. 新增测试 (10个)
+| 类型 | 数量 | 说明 |
+|------|------|------|
+| 单元测试 | 5个 | `test_hilbert_curve_algorithm_2d`、`test_hilbert_curve_algorithm_3d`、`test_hilbert_sort_key_locality`、`test_hilbert_algorithm_with_null_values`、`test_get_algorithm`（更新） |
+| 执行层单元测试 | 3个 | `test_sort_batch_by_algorithm_direct`、`test_sort_batch_by_algorithm_hilbert_2d`、`test_sort_batch_by_algorithm_with_nulls` |
+| 集成测试 | 5个 | `test_create_table_with_multidimensional_cluster`（更新）、`test_cluster_2d_hilbert_basic`、`test_cluster_3d_hilbert_basic`、`test_cluster_4d_hilbert_basic`、`test_cluster_2d_hilbert_with_index` |
+
+### 测试统计
+- **总计**: 34个测试 + 1个文档测试
+- **单元测试**: 20个（原 12 + 新增 8）
+- **集成测试**: 14个（原 5 + Phase 1 5 + Phase 2 2 + 新增 5 - 更新 1 个旧测试）
+  - 实际分布：Phase 0/1/2/3 集成测试共 14个
 - **全部通过**: ✅
 
 ---
