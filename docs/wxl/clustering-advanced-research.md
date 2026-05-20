@@ -109,7 +109,19 @@ ALTER TABLE my_table CLUSTER BY AUTO;  -- 也可对已有表启用
 | **增量执行** | 键变更后，新写入立即使用新键；旧数据通过后台 `OPTIMIZE` 逐步迁移 |
 | **预测优化** | 使用服务端无服务器计算，自动判断何时需要执行 `OPTIMIZE` / `VACUUM` / `ANALYZE` |
 
-背后的技术是 Databricks 2025 年专利中的 **transformer-based 键选择模型**（US Patent 20250156448A1）。注意：专利文档为了突出新颖性，侧重描述了"从 schema 特征推断聚簇键"的部分，但实际产品中模型的输入还包括 Predictive Optimization 收集的查询负载。
+背后的技术是 Databricks 2025 年专利中的 **transformer-based 键选择模型**（US Patent 20250156448A1，授权号 US 12,632,474 B2）。
+
+**专利方案的核心流程**：
+
+1. **特征提取**：从表 schema 中为每列提取特征——列名文本（如 `customer_id` 会被拆分为 `customer` 和 `id` 两个子词 token）、数据类型（int / string / timestamp 等编码为独立 token）、基数估计、是否 nullable 等，组装成数值向量。
+
+2. **Transformer 推理**：将所有列的向量同时输入一个 BERT-like Transformer 模型。Transformer 的自注意力机制让它同时"看到"所有列，理解列间的上下文关系——比如 `user_id` 和 `timestamp` 同时出现时，模型会倾向于给两者高分，因为训练数据中这类组合高频出现在聚簇键里。
+
+3. **逐列打分**：模型对每列输出一个 0~1 的概率值，表示该列适合做聚簇键的置信度。训练数据来自 Databricks 内部大量已聚簇表——标签就是各表实际使用的聚簇键，损失函数聚焦于每列的第一个 token。
+
+4. **选 Top-4**：按得分排序，选 1-4 列输出。选几列取决于得分差距和内部阈值。
+
+**专利 vs 产品**：专利文档为了突出新颖性，侧重描述了"从 schema 特征推断聚簇键"的部分（schema-only 路径以前没人做过）。但 Databricks 实际产品中，Predictive Optimization 还会额外收集查询负载（哪些列出现在 WHERE / JOIN 中、过滤频率等）作为模型的补充输入——schema + 负载两路信息共同决定最终得分。
 
 **三个组件如何协作**：
 
@@ -121,12 +133,7 @@ CLUSTER BY AUTO  ← 用户看到的语法
     └── Predictive Optimization →  决定 WHEN：何时触发，并收集负载喂给模型
 ```
 
-Transformer 模型不是独立运行的——它被 Predictive Optimization 调用，作为 PO 内部的评分函数。PO 收集到足够信息后，将**两路输入**一起喂给模型：
-
-- **Schema 侧**：列名文本、数据类型、基数估计、是否 nullable 等（来自专利描述）
-- **负载侧**：哪些列出现在 WHERE / JOIN ON 中、过滤类型（等值/范围）、过滤频率和选择率等（来自 PO 观测）
-
-模型综合两路信息，为每列输出一个聚簇适用性得分，PO 再结合成本评估决定是否应用。
+Transformer 模型不是独立运行的——它被 Predictive Optimization 调用，作为 PO 内部的评分函数。PO 将 schema 特征和查询负载两路信息喂给模型，拿到每列的得分后，再结合成本评估决定是否应用。
 
 **冷启动行为**：新建空表时负载侧为空，模型只能看 schema，得分不可靠。PO 判断"信息不足，暂不选键"——所以新表初始阶段不聚簇，数据以自然写入顺序存储。当表积累了一定的查询负载后，PO 重新调用模型，此时两路信息齐全，得分才有意义。
 
