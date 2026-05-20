@@ -430,42 +430,44 @@ ZCube #3 [Hilbert 0x8000-0xBFFF]: file_E.parquet                 ← 已聚簇
 ```
 时间 ──────────────────────────────────────────────────────►
 
-T1: OPTIMIZE 读 ZCube#2 的 file_C 和 file_D
+T1: OPTIMIZE 读 ZCube#2 的 file_C 和 file_D (基于快照 V10)
     → 排序、合并 → 准备写出 file_F.parquet + file_G.parquet
 
 T2: 用户执行 INSERT INTO orders VALUES (cust_99, '2025-06-01', ...)
     → 计算 Hilbert 索引 → 落在 ZCube#1 范围
-    → 直接在 ZCube#1 内创建新文件 file_H.parquet
+    → 在 ZCube#1 内创建新文件 file_H.parquet
     → 标记 ZCube#1 为"脏"
-    → 提交 ✓  (和 OPTIMIZE 操作不同 ZCube，无冲突)
+    → 提交 ✓  (操作 ZCube#1，OPTIMIZE 操作 ZCube#2，不重叠)
 
 T3: 用户执行 UPDATE orders SET amount=999 WHERE order_id=12345
-    → order_id=12345 这一行恰好存在 file_D.parquet 中
-    → UPDATE 不重写 file_D，而是写 Deletion Vector: "file_D 第 5 行已删"
-    → 同时写新行到 file_I.parquet
-    → 提交 ✓  (OPTIMIZE 基于旧快照读 file_D，不受 DV 影响)
+    → order_id=12345 这一行恰好存在 file_A.parquet 中 (ZCube#1)
+    → 写 Deletion Vector: "file_A 第 5 行已删"
+    → 同时写更新后的新行到 file_I.parquet (也在 ZCube#1)
+    → 提交 ✓  (操作 ZCube#1，OPTIMIZE 操作 ZCube#2，不重叠)
 
 T4: 用户执行 SELECT * FROM orders WHERE customer_id BETWEEN 10 AND 20
-    → 读当前快照：file_A, file_B, file_H (ZCube#1) + file_C, file_D (ZCube#2) + file_E (ZCube#3)
-    → 同时读取 DV，过滤 file_D 的第 5 行
+    → 当前快照: file_A,file_B,file_H,file_I (ZCube#1) + file_C,file_D (ZCube#2) + file_E (ZCube#3)
+    → 同时读取 DV，过滤 file_A 的第 5 行
     → 正常返回结果 ✓
 
 T5: OPTIMIZE 写完 file_F.parquet + file_G.parquet
     → 提交：用 file_F, file_G 替换 ZCube#2 的 file_C, file_D
-    → 提交 ✓  (没有并发事务修改 ZCube#2 的文件，无冲突)
+    → 注意：file_C/file_D 在 T1-T5 期间未被任何并发操作修改（INSERT/UPDATE 都落在 ZCube#1）
+    → 提交 ✓
 
-T6: 下一个查询自动看到新状态：
-    ZCube#1: file_A, file_B, file_H (脏)
-    ZCube#2: file_F, file_G (净)
-    ZCube#3: file_E (净)
+T6: 下一个查询看到合并后的最新状态：
+    ZCube#1: file_A.parquet, file_B.parquet, file_H.parquet, file_I.parquet  (脏)
+             + DV: file_A 第 5 行已删
+    ZCube#2: file_F.parquet, file_G.parquet  (净)
+    ZCube#3: file_E.parquet  (净)
 ```
 
 这个例子展示了关键点：
-- OPTIMIZE 花了几秒甚至几十秒（T1→T5），期间读写完全不受影响
-- INSERT 写新文件，不和 OPTIMIZE 的输出文件重叠
-- UPDATE 写 DV 不改旧文件，OPTIMIZE 基于旧快照读旧文件
-- 查询始终读某个一致性快照，不会读到"写了一半"的中间态
-- 所有并发操作最终都能提交，不需要等锁
+- OPTIMIZE 从 T1 到 T5 持续了数秒，期间 INSERT 和 UPDATE 完全不需要等待
+- INSERT 写新文件 (file_H)，UPDATE 写 DV + 新行 (file_I)，都是创建新文件，不与 OPTIMIZE 的 file_F/file_G 重叠
+- 冲突避免的关键是**各方操作的 ZCube 不同**：INSERT/UPDATE 在 ZCube#1，OPTIMIZE 在 ZCube#2
+- 如果 UPDATE 恰好落在 ZCube#2，Delta Lake 的行级并发会检测到冲突并让后提交的一方重试——这是乐观锁的正常行为
+- 查询始终读到某个一致性快照，不会看到"写了一半"的中间态
 
 #### 已知限制
 
