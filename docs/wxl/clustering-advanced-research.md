@@ -233,6 +233,21 @@ SELECT SYSTEM$CLUSTERING_INFORMATION('orders', '(customer_id, order_date)');
 | `average_overlaps` | 每个 micro-partition 与其他 micro-partition 的值域重叠度 | 越低越好 |
 | `partition_depth_histogram` | depth 的分布直方图 | 看是否有长尾 |
 
+**`average_depth` 怎么算的**：每个 micro-partition 在聚簇键上有一个 min/max 范围。把所有 micro-partition 的范围画在数轴上，然后用扫描线从左扫到右——在数轴上的每一点，数一数有多少个 micro-partition 的范围覆盖了这一点，取整条数轴上的平均值。
+
+```
+micro-partition A: [0 ───── 40]
+micro-partition B:       [20 ───── 60]
+micro-partition C:             [35 ── 50]
+
+数轴: 0──────────20─────────35──40──50───60
+深度:     1          2          3     2     1
+
+average_depth = (1×20 + 2×15 + 3×5 + 2×10 + 1×10) / 60 = 1.58
+```
+
+如果三个 micro-partition 完全按顺序排列不重叠（A: 0-20, B: 20-40, C: 40-60），depth 处处为 1，`average_depth = 1`。如果三者范围完全相同（都覆盖 0-60），depth 处处为 3，`average_depth = 3`。
+
 **举个例子**：一张 1000 个 micro-partition 的表，对 `(customer_id, order_date)` 运行 `CLUSTERING_INFORMATION`，如果 `average_depth = 950`（接近 1000），说明数据在这些列上完全随机分布——启用聚簇将带来巨大收益。如果 `average_depth = 3.2`，说明数据已经相当有序，聚簇收益有限。
 
 **第三步：Auto Clustering 负责执行**
@@ -635,9 +650,9 @@ Hudi 2026 路线图中计划引入：
 
 | 系统 | 指标 | 含义 |
 |------|------|------|
-| **Snowflake** | `clustering_depth` | 在任意数据点上重叠的 micro-partition 数量 |
-| **Snowflake** | `overlaps` | 与给定 partition 范围重叠的 partition 数量 |
-| **Dremio/Iceberg** | `clustering_depth` | 在 Z-order 索引范围任意点上平均覆盖的文件数 |
+| **Snowflake** | `clustering_depth` | 在聚簇键值域上任意点平均被多少个 micro-partition 覆盖。用扫描线法对每个 micro-partition 的 min/max 范围加权计算（见 2.3.1 详解） |
+| **Snowflake** | `overlaps` | 每个 micro-partition 平均与多少个其他 micro-partition 的值域有交集 |
+| **Dremio/Iceberg** | `clustering_depth` | 在 Z-order 轴上同样用扫描线法计算——每点的 depth = 覆盖该 Z-order 值的文件数。原理与 Snowflake 相同，只是数轴从聚簇键换成了 Z-order 值 |
 | **Delta Lake** | ZCube 脏/净状态 | Delta 日志中记录每个 ZCube 是否需要重聚簇，`OPTIMIZE` 只处理"脏" ZCube |
 
 ### 4.2 写放大控制
