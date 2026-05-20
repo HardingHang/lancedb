@@ -344,13 +344,6 @@ Liquid Clustering 底层使用 **Hilbert 曲线**将多维聚簇键映射为 1D 
 
 新建表时，数据按**自然写入顺序**存储。当写入数据量达到阈值（64 MB–4 GB，取决于聚簇键数量）后，系统开始计算 Hilbert 索引并分配到对应 ZCube。如果使用 `CLUSTER BY AUTO`，初始阶段甚至不确定聚簇键，数据完全按插入顺序存放，直到积累足够的查询负载后才开始选择键并建立 ZCube 结构。
 
-#### 核心概念
-
-Liquid Clustering 替代了传统的 Hive-style partitioning 和 Z-order：
-- 不用硬分区边界
-- 数据按聚簇键灵活组织
-- 聚簇以**增量方式**进行，只重写"需要重写"的文件
-
 #### 写时聚簇（Write-time）
 
 ```sql
@@ -408,19 +401,21 @@ ALTER TABLE my_table CLUSTER BY (new_col1, new_col2);
 
 #### 对并发读写的影响
 
-Liquid Clustering 的 `OPTIMIZE` **不阻塞**并发读写，这是它相比传统 `OPTIMIZE + ZORDER` 的一个重要优势。原因有三：
+Liquid Clustering 的 `OPTIMIZE` **不阻塞**并发读写。要理解为什么，需要先解释两个关键机制：
 
-1. **Row-Level Concurrency**：Liquid Clustering 表默认开启行级并发，冲突检测粒度从文件级降到行级。`INSERT` 和 `OPTIMIZE` 同时运行不会冲突；`UPDATE/DELETE` 和 `OPTIMIZE` 也不会。
-2. **Deletion Vectors**：修改操作通过删除向量标记而非重写文件来实现，避免了文件级的写冲突。
-3. **增量重写范围小**：`OPTIMIZE` 只改写少数几个 ZCube 的文件，而非全表，锁范围和时长都远小于全量重写。
+**Deletion Vectors（删除向量）**：传统 Delta Lake 做 DELETE/UPDATE 时要重写整个 Parquet 文件（因为文件不可变）。DV 把这个过程拆开了——DELETE 不重写数据文件，而是向一个独立的元数据文件写入"文件 X 的第 3、7、15 行已删除"。UPDATE = DELETE（写 DV）+ INSERT（写新行）。查询引擎同时读数据文件 + 删除向量，自动过滤已删行。
 
-以下是冲突矩阵（Row-Level Concurrency 开启时）：
+**Row-Level Concurrency（行级并发）**：传统冲突检测在文件级——两个操作碰到同一个文件就冲突。行级并发把冲突检测降到行粒度：即使 `OPTIMIZE` 在重写文件 A，只要并发的 UPDATE 删除的是文件 A 中与 `OPTIMIZE` 不相交的行，两者就能同时提交。提交时系统合并各事务的删除向量。
 
-| 操作对 | 是否冲突 |
-|--------|:---:|
-| INSERT ↔ OPTIMIZE | 否 |
-| UPDATE / DELETE / MERGE ↔ OPTIMIZE | 否 |
-| OPTIMIZE ↔ OPTIMIZE | 否 |
+有了这两个机制再看冲突矩阵就很清晰了：
+
+| 操作对 | 为什么不会冲突 |
+|--------|------|
+| INSERT ↔ OPTIMIZE | INSERT 写新文件；OPTIMIZE 基于旧快照重写旧文件→输出新文件。两者操作的是不同文件。 |
+| UPDATE/DELETE ↔ OPTIMIZE | UPDATE/DELETE 只写 DV（不改数据文件）；OPTIMIZE 创建新的数据文件。两者不碰同一个物理文件。 |
+| OPTIMIZE ↔ OPTIMIZE | 每个 OPTIMIZE 只处理不同 ZCube 的文件，范围不重叠。 |
+
+也就是说，OPTIMIZE 本身确实是文件级操作（重写 Parquet 文件），但并发读写不阻塞的原因不在于"聚簇有什么魔法"，而在于 Delta Lake 的事务隔离设计——各方都在创建新文件，通过提交时的冲突检测保证一致性，没有人在原地修改旧文件。
 
 #### 已知限制
 
