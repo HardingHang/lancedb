@@ -401,38 +401,15 @@ ALTER TABLE my_table CLUSTER BY (new_col1, new_col2);
 
 #### 对并发读写的影响
 
-Liquid Clustering 的 `OPTIMIZE` **不阻塞**并发读写。要理解为什么，需要先解释两个关键机制：
+当 ZCube#2 正在被 OPTIMIZE 重写时（file_C, file_D → 新文件 file_F, file_G），并发操作的行为很简单：
 
-**Deletion Vectors（删除向量）**：传统 Delta Lake 做 DELETE/UPDATE 时要重写整个 Parquet 文件（因为文件不可变）。DV 把这个过程拆开了——DELETE 不重写数据文件，而是向一个独立的元数据文件写入"文件 X 的第 3、7、15 行已删除"。UPDATE = DELETE（写 DV）+ INSERT（写新行）。查询引擎同时读数据文件 + 删除向量，自动过滤已删行。
+**读**：始终看到 OPTIMIZE 之前的旧文件（file_C, file_D）。因为 OPTIMIZE 创建的是新文件，提交前旧文件仍是当前快照的一部分。查询不受任何影响。
 
-**Row-Level Concurrency（行级并发）**：传统冲突检测在文件级——两个 DML 操作碰到同一个文件就冲突。行级并发把检测降到行粒度，两个 UPDATE 改同一个文件的不同行时不会冲突。但这主要解决的是 **DML 之间的并发**，对 OPTIMIZE 场景帮助有限——因为 OPTIMIZE 是整体替换文件，不是按行修改。OPTIMIZE 能否与 DML 和平共处，关键看它们是否操作**不同的 ZCube**。
+**写到其他 ZCube**：正常提交。比如向 ZCube#1 INSERT 一行（写 file_H），file_H 和 OPTIMIZE 的 file_F/file_G 是不同文件，互不干扰。
 
-有了这两个机制，再来看实际的冲突情况。注意这里说的是**冲突**（两个操作同时提交时的乐观锁冲突，需要一方重试），不是**阻塞**（一方等另一方完成）。Liquid Clustering 下冲突**大大减少**但**并非不存在**：
+**写到同一 ZCube**：提交时发生乐观锁冲突，后提交的一方自动重试。比如 ZCube#2 正在被重写时，另一个 INSERT 也往 ZCube#2 写入了 file_I——INSERT 先提交成功，OPTIMIZE 提交时发现 ZCube#2 的文件列表已经变了（多了 file_I），重试整个 OPTIMIZE 过程。
 
-| 操作对 | 冲突情况 |
-|--------|---------|
-| INSERT ↔ OPTIMIZE（不同 ZCube） | 不冲突。INSERT 写新文件，OPTIMIZE 重写其他 ZCube 的文件，文件不重叠。 |
-| INSERT ↔ OPTIMIZE（同一 ZCube） | **可能冲突**。INSERT 在 ZCube 内新增文件并标记"脏"，OPTIMIZE 也在重写同一 ZCube 并标记"净"。两者修改同一 ZCube 的元数据，后提交的一方需要重试。 |
-| UPDATE/DELETE ↔ OPTIMIZE（不同 ZCube） | 不冲突。DV 引用的文件不被 OPTIMIZE 替换。 |
-| UPDATE/DELETE ↔ OPTIMIZE（同一 ZCube） | **可能冲突**。DV 引用了 OPTIMIZE 即将替换的文件。OPTIMIZE 提交时会发现它替换的文件被 DV 引用了，需要重试或合并。 |
-| OPTIMIZE ↔ OPTIMIZE | 通常不冲突，因为每次 OPTIMIZE 只处理"脏" ZCube，两次 OPTIMIZE 处理的 ZCube 集合通常不重叠。但如果重叠，后提交的一方需要重试。 |
-
-关键点：
-- "不阻塞"意味着**并发操作可以同时执行而不是排队等锁**——这点确实做到了
-- "不冲突"是另一回事——**冲突会存在，但通过乐观锁 + 自动重试来解决**，用户无感知
-- 冲突概率取决于并发操作是否落在同一 ZCube。对于写入分散的大表，绝大多数操作落在不同 ZCube，冲突概率很低
-
-**本质上**：OPTIMIZE 是文件级操作（重写 Parquet 文件），但并发不阻塞的原因不在于聚簇本身，而在于 Delta Lake 的事务隔离——各方都在创建新文件，没人在原地改旧文件，冲突后自动重试。
-
-**具体例子**：一张订单表有三个 ZCube，ZCube#2 正在被 OPTIMIZE 重写（file_C, file_D → file_F, file_G）。同时用户向 ZCube#1 INSERT 一行（写新文件 file_H），又在 ZCube#1 UPDATE 一行（写 DV 标记 file_A 某行已删 + 新行 file_I）。两个操作都落在 ZCube#1，与 OPTIMIZE 的 ZCube#2 不重叠，三者全部正常提交。OPTIMIZE 完成后，状态变为：
-
-```
-ZCube#1: file_A, file_B, file_H, file_I (+ DV: file_A 第 5 行已删)  脏
-ZCube#2: file_F, file_G                                              净
-ZCube#3: file_E                                                      净
-```
-
-核心原因就一条：各方都在创建新文件，操作的是不同文件，没有人在原地改旧文件。如果碰巧 UPDATE 落在了 ZCube#2，乐观锁会检测到冲突并让后提交的一方重试。
+所以结论就一句话：**不管写还是读，都不会被阻塞等锁。但要往正在被聚簇的 ZCube 里写，会触发重试。**
 
 #### 已知限制
 
