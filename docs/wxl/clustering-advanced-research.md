@@ -407,15 +407,22 @@ Liquid Clustering 的 `OPTIMIZE` **不阻塞**并发读写。要理解为什么�
 
 **Row-Level Concurrency（行级并发）**：传统冲突检测在文件级——两个操作碰到同一个文件就冲突。行级并发把冲突检测降到行粒度：即使 `OPTIMIZE` 在重写文件 A，只要并发的 UPDATE 删除的是文件 A 中与 `OPTIMIZE` 不相交的行，两者就能同时提交。提交时系统合并各事务的删除向量。
 
-有了这两个机制再看冲突矩阵就很清晰了：
+有了这两个机制，再来看实际的冲突情况。注意这里说的是**冲突**（两个操作同时提交时的乐观锁冲突，需要一方重试），不是**阻塞**（一方等另一方完成）。Liquid Clustering 下冲突**大大减少**但**并非不存在**：
 
-| 操作对 | 为什么不会冲突 |
-|--------|------|
-| INSERT ↔ OPTIMIZE | INSERT 写新文件；OPTIMIZE 基于旧快照重写旧文件→输出新文件。两者操作的是不同文件。 |
-| UPDATE/DELETE ↔ OPTIMIZE | UPDATE/DELETE 只写 DV（不改数据文件）；OPTIMIZE 创建新的数据文件。两者不碰同一个物理文件。 |
-| OPTIMIZE ↔ OPTIMIZE | 每个 OPTIMIZE 只处理不同 ZCube 的文件，范围不重叠。 |
+| 操作对 | 冲突情况 |
+|--------|---------|
+| INSERT ↔ OPTIMIZE（不同 ZCube） | 不冲突。INSERT 写新文件，OPTIMIZE 重写其他 ZCube 的文件，文件不重叠。 |
+| INSERT ↔ OPTIMIZE（同一 ZCube） | **可能冲突**。INSERT 在 ZCube 内新增文件并标记"脏"，OPTIMIZE 也在重写同一 ZCube 并标记"净"。两者修改同一 ZCube 的元数据，后提交的一方需要重试。 |
+| UPDATE/DELETE ↔ OPTIMIZE（不同 ZCube） | 不冲突。DV 引用的文件不被 OPTIMIZE 替换。 |
+| UPDATE/DELETE ↔ OPTIMIZE（同一 ZCube） | **可能冲突**。DV 引用了 OPTIMIZE 即将替换的文件。OPTIMIZE 提交时会发现它替换的文件被 DV 引用了，需要重试或合并。 |
+| OPTIMIZE ↔ OPTIMIZE | 通常不冲突，因为每次 OPTIMIZE 只处理"脏" ZCube，两次 OPTIMIZE 处理的 ZCube 集合通常不重叠。但如果重叠，后提交的一方需要重试。 |
 
-也就是说，OPTIMIZE 本身确实是文件级操作（重写 Parquet 文件），但并发读写不阻塞的原因不在于"聚簇有什么魔法"，而在于 Delta Lake 的事务隔离设计——各方都在创建新文件，通过提交时的冲突检测保证一致性，没有人在原地修改旧文件。
+关键点：
+- "不阻塞"意味着**并发操作可以同时执行而不是排队等锁**——这点确实做到了
+- "不冲突"是另一回事——**冲突会存在，但通过乐观锁 + 自动重试来解决**，用户无感知
+- 冲突概率取决于并发操作是否落在同一 ZCube。对于写入分散的大表，绝大多数操作落在不同 ZCube，冲突概率很低
+
+**本质上**：OPTIMIZE 是文件级操作（重写 Parquet 文件），但并发不阻塞的原因不在于聚簇本身，而在于 Delta Lake 的事务隔离——各方都在创建新文件，没人在原地改旧文件，冲突后自动重试。
 
 **具体例子**：一张订单表有三个 ZCube，ZCube#2 正在被 OPTIMIZE 重写（file_C, file_D → file_F, file_G）。同时用户向 ZCube#1 INSERT 一行（写新文件 file_H），又在 ZCube#1 UPDATE 一行（写 DV 标记 file_A 某行已删 + 新行 file_I）。两个操作都落在 ZCube#1，与 OPTIMIZE 的 ZCube#2 不重叠，三者全部正常提交。OPTIMIZE 完成后，状态变为：
 
