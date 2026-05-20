@@ -417,57 +417,15 @@ Liquid Clustering 的 `OPTIMIZE` **不阻塞**并发读写。要理解为什么�
 
 也就是说，OPTIMIZE 本身确实是文件级操作（重写 Parquet 文件），但并发读写不阻塞的原因不在于"聚簇有什么魔法"，而在于 Delta Lake 的事务隔离设计——各方都在创建新文件，通过提交时的冲突检测保证一致性，没有人在原地修改旧文件。
 
-**具体例子**：假设一张订单表 `orders` 按 `(customer_id, order_date)` 做 Liquid Clustering，当前有下表状态：
+**具体例子**：一张订单表有三个 ZCube，ZCube#2 正在被 OPTIMIZE 重写（file_C, file_D → file_F, file_G）。同时用户向 ZCube#1 INSERT 一行（写新文件 file_H），又在 ZCube#1 UPDATE 一行（写 DV 标记 file_A 某行已删 + 新行 file_I）。两个操作都落在 ZCube#1，与 OPTIMIZE 的 ZCube#2 不重叠，三者全部正常提交。OPTIMIZE 完成后，状态变为：
 
 ```
-ZCube #1 [Hilbert 0x0000-0x3FFF]: file_A.parquet, file_B.parquet  ← 已聚簇
-ZCube #2 [Hilbert 0x4000-0x7FFF]: file_C.parquet, file_D.parquet  ← 脏, OPTIMIZE 正在重写
-ZCube #3 [Hilbert 0x8000-0xBFFF]: file_E.parquet                 ← 已聚簇
+ZCube#1: file_A, file_B, file_H, file_I (+ DV: file_A 第 5 行已删)  脏
+ZCube#2: file_F, file_G                                              净
+ZCube#3: file_E                                                      净
 ```
 
-此时同时发生三件事：
-
-```
-时间 ──────────────────────────────────────────────────────►
-
-T1: OPTIMIZE 读 ZCube#2 的 file_C 和 file_D (基于快照 V10)
-    → 排序、合并 → 准备写出 file_F.parquet + file_G.parquet
-
-T2: 用户执行 INSERT INTO orders VALUES (cust_99, '2025-06-01', ...)
-    → 计算 Hilbert 索引 → 落在 ZCube#1 范围
-    → 在 ZCube#1 内创建新文件 file_H.parquet
-    → 标记 ZCube#1 为"脏"
-    → 提交 ✓  (操作 ZCube#1，OPTIMIZE 操作 ZCube#2，不重叠)
-
-T3: 用户执行 UPDATE orders SET amount=999 WHERE order_id=12345
-    → order_id=12345 这一行恰好存在 file_A.parquet 中 (ZCube#1)
-    → 写 Deletion Vector: "file_A 第 5 行已删"
-    → 同时写更新后的新行到 file_I.parquet (也在 ZCube#1)
-    → 提交 ✓  (操作 ZCube#1，OPTIMIZE 操作 ZCube#2，不重叠)
-
-T4: 用户执行 SELECT * FROM orders WHERE customer_id BETWEEN 10 AND 20
-    → 当前快照: file_A,file_B,file_H,file_I (ZCube#1) + file_C,file_D (ZCube#2) + file_E (ZCube#3)
-    → 同时读取 DV，过滤 file_A 的第 5 行
-    → 正常返回结果 ✓
-
-T5: OPTIMIZE 写完 file_F.parquet + file_G.parquet
-    → 提交：用 file_F, file_G 替换 ZCube#2 的 file_C, file_D
-    → 注意：file_C/file_D 在 T1-T5 期间未被任何并发操作修改（INSERT/UPDATE 都落在 ZCube#1）
-    → 提交 ✓
-
-T6: 下一个查询看到合并后的最新状态：
-    ZCube#1: file_A.parquet, file_B.parquet, file_H.parquet, file_I.parquet  (脏)
-             + DV: file_A 第 5 行已删
-    ZCube#2: file_F.parquet, file_G.parquet  (净)
-    ZCube#3: file_E.parquet  (净)
-```
-
-这个例子展示了关键点：
-- OPTIMIZE 从 T1 到 T5 持续了数秒，期间 INSERT 和 UPDATE 完全不需要等待
-- INSERT 写新文件 (file_H)，UPDATE 写 DV + 新行 (file_I)，都是创建新文件，不与 OPTIMIZE 的 file_F/file_G 重叠
-- 冲突避免的关键是**各方操作的 ZCube 不同**：INSERT/UPDATE 在 ZCube#1，OPTIMIZE 在 ZCube#2
-- 如果 UPDATE 恰好落在 ZCube#2，Delta Lake 的行级并发会检测到冲突并让后提交的一方重试——这是乐观锁的正常行为
-- 查询始终读到某个一致性快照，不会看到"写了一半"的中间态
+核心原因就一条：各方都在创建新文件，操作的是不同文件，没有人在原地改旧文件。如果碰巧 UPDATE 落在了 ZCube#2，乐观锁会检测到冲突并让后提交的一方重试。
 
 #### 已知限制
 
