@@ -405,7 +405,7 @@ Liquid Clustering 的 `OPTIMIZE` **不阻塞**并发读写。要理解为什么�
 
 **Deletion Vectors（删除向量）**：传统 Delta Lake 做 DELETE/UPDATE 时要重写整个 Parquet 文件（因为文件不可变）。DV 把这个过程拆开了——DELETE 不重写数据文件，而是向一个独立的元数据文件写入"文件 X 的第 3、7、15 行已删除"。UPDATE = DELETE（写 DV）+ INSERT（写新行）。查询引擎同时读数据文件 + 删除向量，自动过滤已删行。
 
-**Row-Level Concurrency（行级并发）**：传统冲突检测在文件级——两个操作碰到同一个文件就冲突。行级并发把冲突检测降到行粒度：即使 `OPTIMIZE` 在重写文件 A，只要并发的 UPDATE 删除的是文件 A 中与 `OPTIMIZE` 不相交的行，两者就能同时提交。提交时系统合并各事务的删除向量。
+**Row-Level Concurrency（行级并发）**：传统冲突检测在文件级——两个 DML 操作碰到同一个文件就冲突。行级并发把检测降到行粒度，两个 UPDATE 改同一个文件的不同行时不会冲突。但这主要解决的是 **DML 之间的并发**，对 OPTIMIZE 场景帮助有限——因为 OPTIMIZE 是整体替换文件，不是按行修改。OPTIMIZE 能否与 DML 和平共处，关键看它们是否操作**不同的 ZCube**。
 
 有了这两个机制，再来看实际的冲突情况。注意这里说的是**冲突**（两个操作同时提交时的乐观锁冲突，需要一方重试），不是**阻塞**（一方等另一方完成）。Liquid Clustering 下冲突**大大减少**但**并非不存在**：
 
